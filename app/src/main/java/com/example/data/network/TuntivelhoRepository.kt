@@ -26,7 +26,7 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 sealed class StampResult {
-    data class Success(val message: String, val timestamp: Long, val balanceStr: String = "") : StampResult()
+    data class Success(val message: String, val timestamp: Long = System.currentTimeMillis(), val balanceStr: String = "") : StampResult()
     data class Error(val errorMessage: String) : StampResult()
 }
 
@@ -362,7 +362,12 @@ class TuntivelhoRepository(
         return@withContext StampResult.Error(finalError)
     }
 
-    suspend fun fetchServerBalance(): String? = withContext(Dispatchers.IO) {
+    suspend fun fetchServerBalance(): String? {
+        val res = fetchServerBalanceResult()
+        return if (res is StampResult.Success) res.message else null
+    }
+
+    suspend fun fetchServerBalanceResult(): StampResult = withContext(Dispatchers.IO) {
         val settings = prefsRepository.settings.value
         val password = prefsRepository.getPassword()
 
@@ -373,31 +378,36 @@ class TuntivelhoRepository(
                 settings.lastServerBalance.ifBlank { "+0:00" }
             }
             prefsRepository.saveServerBalance(balance)
-            return@withContext balance
+            return@withContext StampResult.Success(balance)
         }
 
         if (settings.username.isBlank() || password.isBlank()) {
-            return@withContext null
+            return@withContext StampResult.Error("Käyttäjätunnus tai salasana puuttuu. Syötä tunnukset asetuksissa.")
         }
 
         val loginResult = login(settings.username, password)
         if (loginResult is StampResult.Error) {
-            return@withContext null
+            return@withContext StampResult.Error(loginResult.errorMessage)
         }
 
         val token = prefsRepository.getAuthToken()
         val candidateUrls = buildCandidateUrls(settings.serverUrl)
 
+        var lastError = ""
+
         for (targetUrl in candidateUrls) {
-            val res = fetchKellokorttiFull(targetUrl, token)
-            if (res != null) {
-                return@withContext res
+            val result = fetchKellokorttiFullResult(targetUrl, token)
+            if (result is StampResult.Success) {
+                return@withContext result
+            } else if (result is StampResult.Error) {
+                lastError = result.errorMessage
             }
         }
-        return@withContext null
+        val finalError = if (lastError.isNotBlank()) lastError else "Tuntitaseen haku epäonnistui."
+        return@withContext StampResult.Error(finalError)
     }
 
-    private fun fetchKellokorttiFull(targetUrl: String, token: String): String? {
+    private fun fetchKellokorttiFullResult(targetUrl: String, token: String): StampResult {
         val payload = GraphQLQueries.buildKellokorttiFullPayload()
         val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
@@ -451,16 +461,21 @@ class TuntivelhoRepository(
                 if (taseSec != null) {
                     val formatted = formatTaseSeconds(taseSec)
                     prefsRepository.saveServerBalance(formatted)
-                    formatted
+                    StampResult.Success(formatted)
                 } else {
-                    ""
+                    StampResult.Success("")
                 }
+            } else if (code == 404) {
+                StampResult.Error("Palvelin palautti virhekoodin HTTP 404 (Sivua tai rajapintaa ei löytynyt osoitteesta $targetUrl)")
+            } else if (code == 401) {
+                prefsRepository.clearAuthToken()
+                StampResult.Error("Autentikointivirhe HTTP 401: Kirjaudu uudelleen osoitteessa $targetUrl")
             } else {
-                null
+                StampResult.Error("Palvelinvirhe HTTP $code osoitteessa $targetUrl")
             }
         } catch (e: Exception) {
             Log.e("Tuntivelho", "Error fetching kellokortti full: ${e.localizedMessage}")
-            null
+            StampResult.Error("Yhteysvirhe: ${e.localizedMessage}")
         }
     }
 

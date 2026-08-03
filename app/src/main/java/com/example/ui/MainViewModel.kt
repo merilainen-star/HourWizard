@@ -104,17 +104,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun handleGlobalError(errorMsg: String) {
+        val userFriendlyMessage = when {
+            errorMsg.contains("404") -> " Virhe HTTP 404: Palvelimen rajapintaa ei löytynyt. Tarkista palvelimen osoite asetuksista."
+            errorMsg.contains("500") -> " Virhe HTTP 500: Palvelinvirhe. Tuntivelho-palvelimella tapahtui sisäinen virhe."
+            errorMsg.contains("401") || errorMsg.contains("403") -> " Virhe HTTP ${if (errorMsg.contains("401")) "401" else "403"}: Autentikointivirhe. Tarkista käyttäjätunnus ja salasana."
+            errorMsg.contains("Yhteysvirhe") || errorMsg.contains("Unable to resolve host") || errorMsg.contains("Failed to connect") -> " Verkkovirhe: Tarkista internetyhteys ja palvelimen osoite."
+            else -> " Virhe: $errorMsg"
+        }
+        _uiMessage.value = UiMessage(userFriendlyMessage, isError = true)
+    }
+
     fun refreshServerBalance() {
         viewModelScope.launch {
             _isLoading.value = true
-            val res = repository.fetchServerBalance()
+            val result = repository.fetchServerBalanceResult()
             _isLoading.value = false
             val s = prefsRepository.settings.value
-            if (res != null) {
-                val statusText = if (s.isClockedIn) "Sisäänleimattu" else "Ei aktiivista leimausta"
-                _uiMessage.value = UiMessage("Tuntitase ($res) ja leimaustila ($statusText) päivitetty.", isError = false)
-            } else {
-                _uiMessage.value = UiMessage("Päivitys epäonnistui. Tarkista verkkoyhteys ja tunnukset asetuksista.", isError = true)
+            when (result) {
+                is StampResult.Success -> {
+                    val balanceStr = result.message
+                    val statusText = if (s.isClockedIn) "Sisäänleimattu" else "Ei aktiivista leimausta"
+                    val msgText = if (balanceStr.isNotBlank()) "Tuntitase ($balanceStr) ja leimaustila ($statusText) päivitetty." else "Leimaustila ($statusText) päivitetty."
+                    _uiMessage.value = UiMessage(msgText, isError = false)
+                }
+                is StampResult.Error -> {
+                    handleGlobalError(result.errorMessage)
+                }
             }
         }
     }
@@ -147,7 +163,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiMessage.value = UiMessage(result.message, isError = false)
                 }
                 is StampResult.Error -> {
-                    _uiMessage.value = UiMessage(result.errorMessage, isError = true)
+                    handleGlobalError(result.errorMessage)
                 }
             }
         }
@@ -204,7 +220,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiMessage.value = UiMessage(result.message, isError = false)
                 }
                 is StampResult.Error -> {
-                    _uiMessage.value = UiMessage(result.errorMessage, isError = true)
+                    handleGlobalError(result.errorMessage)
                 }
             }
         }
@@ -223,7 +239,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiMessage.value = UiMessage(result.message, isError = false)
                 }
                 is StampResult.Error -> {
-                    _uiMessage.value = UiMessage(result.errorMessage, isError = true)
+                    handleGlobalError(result.errorMessage)
                 }
             }
         }
