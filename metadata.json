@@ -1,0 +1,6 @@
+{
+  "name": "Tuntivelho",
+  "description": "Tuntivelho-työaikaleimaukset ja automaattiset ilmoitusmuistutukset saldolaskennalla.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
