@@ -12,18 +12,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BeachAccess
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
@@ -33,6 +40,7 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -76,6 +84,7 @@ import com.example.ui.MainViewModel
 import com.example.ui.components.TimePickerDialog
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
@@ -116,6 +125,12 @@ fun SettingsScreen(
     var departureWindowStart by remember { mutableStateOf(settings.departureWindowStart) }
     var departureWindowEnd by remember { mutableStateOf(settings.departureWindowEnd) }
 
+    var targetMode by remember { mutableStateOf(settings.targetMode) }
+    var targetDailyStr by remember { mutableStateOf(settings.targetHoursDaily.toString()) }
+    var targetWeeklyStr by remember { mutableStateOf(settings.targetHoursWeekly.toString()) }
+    var targetSoundEnabled by remember { mutableStateOf(settings.targetSoundAlertEnabled) }
+    var targetVibEnabled by remember { mutableStateOf(settings.targetVibrationAlertEnabled) }
+
     var addressSearchQuery by remember { mutableStateOf("") }
 
     var showVacationAlert by remember { mutableStateOf(false) }
@@ -129,6 +144,22 @@ fun SettingsScreen(
     var showDepPickerEnd by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+
+    val createDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportBackupToUri(context, uri)
+        }
+    }
+
+    val openDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importBackupFromUri(context, uri)
+        }
+    }
 
     fun openDatePicker(currentValue: String, onDateSelected: (String) -> Unit) {
         val helsinkiTz = TimeZone.getTimeZone("Europe/Helsinki")
@@ -470,6 +501,151 @@ fun SettingsScreen(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp)
                 )
+            }
+        }
+
+        // Target Goals & Overtime Alert Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Flag,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Tavoitetunnit & Hälytykset",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Text(
+                    text = "Aseta päivittäinen tai viikoittainen tavoitetuntimäärä ja valitse saatko äänimerkin ja/tai värinähälytyksen kun tavoite täyttyy ja saldo alkaa kertyä plussalle.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Text(
+                    text = "Tavoitteen tyyppi",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    FilterChip(
+                        selected = targetMode == "DAILY",
+                        onClick = { targetMode = "DAILY" },
+                        label = { Text("Päivittäinen tavoite") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = targetMode == "WEEKLY",
+                        onClick = { targetMode = "WEEKLY" },
+                        label = { Text("Viikoittainen tavoite") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                if (targetMode == "DAILY") {
+                    OutlinedTextField(
+                        value = targetDailyStr,
+                        onValueChange = { targetDailyStr = it },
+                        label = { Text("Päivittäinen tavoite (h, esim. 7.5)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(onClick = { targetDailyStr = "7.5" }) { Text("7.5 h") }
+                        OutlinedButton(onClick = { targetDailyStr = "8.0" }) { Text("8.0 h") }
+                        OutlinedButton(onClick = { targetDailyStr = "7.0" }) { Text("7.0 h") }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = targetWeeklyStr,
+                        onValueChange = { targetWeeklyStr = it },
+                        label = { Text("Viikoittainen tavoite (h, esim. 37.5)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(onClick = { targetWeeklyStr = "37.5" }) { Text("37.5 h") }
+                        OutlinedButton(onClick = { targetWeeklyStr = "40.0" }) { Text("40.0 h") }
+                        OutlinedButton(onClick = { targetWeeklyStr = "35.0" }) { Text("35.0 h") }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                Text(
+                    text = "Hälytykset kun tavoite saavutettu (+ saldo)",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.VolumeUp,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text("Äänimerkki", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Soita merkkiääni kun tavoite täyttyy", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Switch(
+                        checked = targetSoundEnabled,
+                        onCheckedChange = { targetSoundEnabled = it }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Vibration,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text("Värinähälytys", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Värise kun tavoite täyttyy", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Switch(
+                        checked = targetVibEnabled,
+                        onCheckedChange = { targetVibEnabled = it }
+                    )
+                }
             }
         }
 
@@ -1073,6 +1249,88 @@ fun SettingsScreen(
             }
         }
 
+        // Backup & Restore Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Backup,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Varmuuskopiointi & Palautus",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Tallenna leimaustiedot ja asetukset uudelleenasennusta varten",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                HorizontalDivider()
+
+                Text(
+                    text = "Voit tallentaa kaikki leimausmerkinnät ja sovelluksen asetukset JSON-varmuuskopiotiedostoon laitteellesi tai pilvipalveluun. Voit palauttaa tiedot milloin tahansa uudelleenasennuksen jälkeen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            val helsinkiTz = TimeZone.getTimeZone("Europe/Helsinki")
+                            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply { timeZone = helsinkiTz }.format(Date())
+                            createDocumentLauncher.launch("tuntivelho_varmuuskopio_$dateStr.json")
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Backup,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Luo varmuuskopio", style = MaterialTheme.typography.labelSmall)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            openDocumentLauncher.launch(arrayOf("application/json", "*/*"))
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Restore,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Palauta tiedostosta", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+
         // Test Notifications Debug Card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -1158,6 +1416,14 @@ fun SettingsScreen(
                     arrEnd = arrivalWindowEnd,
                     depStart = departureWindowStart,
                     depEnd = departureWindowEnd
+                )
+
+                viewModel.saveTargetSettings(
+                    targetMode = targetMode,
+                    targetHoursDaily = targetDailyStr.toDoubleOrNull() ?: 7.5,
+                    targetHoursWeekly = targetWeeklyStr.toDoubleOrNull() ?: 37.5,
+                    targetSoundAlertEnabled = targetSoundEnabled,
+                    targetVibrationAlertEnabled = targetVibEnabled
                 )
             },
             modifier = Modifier

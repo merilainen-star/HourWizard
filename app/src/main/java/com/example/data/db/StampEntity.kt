@@ -11,5 +11,6 @@ data class StampEntity(
     val actionType: String, // "SISÄÄN" or "ULOS"
     val isSuccess: Boolean,
     val message: String,
-    val balance: String = "" // e.g. "+0:12" or "-0:27"
+    val balance: String = "", // e.g. "+0:12" or "-0:27"
+    val rawDetails: String = "" // Raw API/JSON or debug log info
 )

@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.app.Application
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.alarm.AlarmScheduler
@@ -12,6 +13,7 @@ import com.example.data.network.StampResult
 import com.example.data.network.TuntivelhoRepository
 import com.example.data.preferences.AppSettings
 import com.example.data.preferences.UserPreferencesRepository
+import com.example.util.BackupUtils
 import com.example.util.LocationUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,6 +54,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentBalanceStr = MutableStateFlow("0:00")
     val currentBalanceStr: StateFlow<String> = _currentBalanceStr.asStateFlow()
 
+    val rawApiResponse: StateFlow<String> = repository.rawApiResponse.asStateFlow()
+
     init {
         // Schedule alarms on launch
         val currentSettings = prefsRepository.loadSettings()
@@ -68,11 +72,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (true) {
                 val s = prefsRepository.settings.value
                 if (s.isClockedIn && s.clockInTimestamp > 0L) {
+                    val now = System.currentTimeMillis()
                     _currentBalanceStr.value = TuntivelhoRepository.calculateBalance(
                         clockInTs = s.clockInTimestamp,
-                        currentTs = System.currentTimeMillis(),
+                        currentTs = now,
                         targetMinutesNeeded = s.totalWorkdayMinutesNeeded
                     )
+
+                    // Target goal alert check
+                    val elapsedMinutes = ((now - s.clockInTimestamp) / 60000L).toInt()
+                    val targetMins = s.currentTargetMinutesNeeded
+                    if (targetMins > 0 && elapsedMinutes >= targetMins) {
+                        val helsinkiTz = java.util.TimeZone.getTimeZone("Europe/Helsinki")
+                        val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply { timeZone = helsinkiTz }.format(Date())
+                        if (s.lastTargetAlertDate != todayStr && (s.targetSoundAlertEnabled || s.targetVibrationAlertEnabled)) {
+                            val modeText = if (s.targetMode == "WEEKLY") "Työviikon" else "Työpäivän"
+                            notificationHelper.showTargetReachedNotification(
+                                title = "🎉 $modeText tavoite täynnä!",
+                                message = "$modeText tavoite saavutettu. Saldo siirtyy plussalle (+ ylityöt)!",
+                                playSound = s.targetSoundAlertEnabled,
+                                vibrate = s.targetVibrationAlertEnabled
+                            )
+                            prefsRepository.updateLastTargetAlertDate(todayStr)
+                        }
+                    }
                 } else {
                     _currentBalanceStr.value = "0:00"
                 }
@@ -83,7 +106,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshServerBalance() {
         viewModelScope.launch {
-            repository.fetchServerBalance()
+            _isLoading.value = true
+            val res = repository.fetchServerBalance()
+            _isLoading.value = false
+            val s = prefsRepository.settings.value
+            if (res != null) {
+                val statusText = if (s.isClockedIn) "Sisäänleimattu" else "Ei aktiivista leimausta"
+                _uiMessage.value = UiMessage("Tuntitase ($res) ja leimaustila ($statusText) päivitetty.", isError = false)
+            } else {
+                _uiMessage.value = UiMessage("Päivitys epäonnistui. Tarkista verkkoyhteys ja tunnukset asetuksista.", isError = true)
+            }
         }
     }
 
@@ -338,5 +370,93 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             db.stampDao().clearAllLogs()
             _uiMessage.value = UiMessage("Leimaushistoria tyhjennetty.", isError = false)
         }
+    }
+
+    fun exportBackupToUri(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val logs = db.stampDao().getAllLogsList()
+                val jsonString = BackupUtils.exportBackupJson(logs, settings.value)
+                val success = BackupUtils.writeToUri(context, uri, jsonString)
+                if (success) {
+                    _uiMessage.value = UiMessage("💾 Varmuuskopio tallennettu onnistuneesti! (${logs.size} merkintää)", isError = false)
+                } else {
+                    _uiMessage.value = UiMessage("Varmuuskopion tallennus epäonnistui.", isError = true)
+                }
+            } catch (e: Exception) {
+                _uiMessage.value = UiMessage("Virhe varmuuskopiota luotaessa: ${e.message}", isError = true)
+            }
+        }
+    }
+
+    fun importBackupFromUri(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val jsonString = BackupUtils.readFromUri(context, uri)
+                if (jsonString.isNullOrBlank()) {
+                    _uiMessage.value = UiMessage("Tiedoston lukeminen epäonnistui.", isError = true)
+                    return@launch
+                }
+
+                val backupData = BackupUtils.importBackupJson(jsonString)
+                if (backupData.logs.isNotEmpty()) {
+                    db.stampDao().insertAll(backupData.logs)
+                }
+
+                backupData.settings?.let { s ->
+                    if (s.username.isNotBlank()) {
+                        prefsRepository.saveCredentials(s.username, "")
+                    }
+                    prefsRepository.saveReminderSettings(
+                        morning = s.morningReminderTime,
+                        evening = s.eveningReminderTime,
+                        hours = s.workdayHours,
+                        minutes = s.workdayMinutes,
+                        lunch = s.lunchBreakMinutes,
+                        url = s.serverUrl,
+                        isDemo = s.isDemoMode,
+                        enabledDays = s.enabledDaysString,
+                        isVacation = s.isVacationEnabled,
+                        vacationStart = s.vacationStart,
+                        vacationEnd = s.vacationEnd,
+                        appTheme = s.appTheme
+                    )
+                    prefsRepository.saveGeofenceSettings(
+                        isGeofenceEnabled = s.isGeofenceEnabled,
+                        lat = s.workplaceLat,
+                        lng = s.workplaceLng,
+                        radiusMeters = s.geofenceRadiusMeters,
+                        arrStart = s.arrivalWindowStart,
+                        arrEnd = s.arrivalWindowEnd,
+                        depStart = s.departureWindowStart,
+                        depEnd = s.departureWindowEnd
+                    )
+                }
+
+                _uiMessage.value = UiMessage(
+                    "✅ Varmuuskopio palautettu! Palautettiin ${backupData.logs.size} leimausmerkintää ja asetukset.",
+                    isError = false
+                )
+            } catch (e: Exception) {
+                _uiMessage.value = UiMessage("Virhe varmuuskopiota palautettaessa. Varmista että tiedosto on vaaditussa formaatissa.", isError = true)
+            }
+        }
+    }
+
+    fun saveTargetSettings(
+        targetMode: String,
+        targetHoursDaily: Double,
+        targetHoursWeekly: Double,
+        targetSoundAlertEnabled: Boolean,
+        targetVibrationAlertEnabled: Boolean
+    ) {
+        prefsRepository.saveTargetSettings(
+            targetMode = targetMode,
+            targetHoursDaily = targetHoursDaily,
+            targetHoursWeekly = targetHoursWeekly,
+            targetSoundAlertEnabled = targetSoundAlertEnabled,
+            targetVibrationAlertEnabled = targetVibrationAlertEnabled
+        )
+        _uiMessage.value = UiMessage("Tavoitetunnit ja hälytykset tallennettu.", isError = false)
     }
 }

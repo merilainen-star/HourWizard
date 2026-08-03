@@ -35,6 +35,8 @@ class TuntivelhoRepository(
     private val stampDao: StampDao
 ) {
 
+    val rawApiResponse = kotlinx.coroutines.flow.MutableStateFlow<String>("Ei vielä hakuja tehty.")
+
     private val cookieMap = java.util.concurrent.ConcurrentHashMap<String, MutableMap<String, Cookie>>()
 
     private val moshi: Moshi by lazy {
@@ -195,7 +197,8 @@ class TuntivelhoRepository(
                     actionType = actionTitle,
                     isSuccess = true,
                     message = demoMsg,
-                    balance = ""
+                    balance = "",
+                    rawDetails = "DEMOTILA: Leimaus simuloitu offline-tilassa (ei verkkokutsua palvelimelle)."
                 )
             )
             return@withContext StampResult.Success(demoMsg, now)
@@ -363,7 +366,17 @@ class TuntivelhoRepository(
         val settings = prefsRepository.settings.value
         val password = prefsRepository.getPassword()
 
-        if (settings.username.isBlank() || password.isBlank() || settings.isDemoMode) {
+        if (settings.isDemoMode) {
+            val balance = if (settings.isClockedIn && settings.clockInTimestamp > 0L) {
+                calculateBalance(settings.clockInTimestamp, System.currentTimeMillis(), settings.totalWorkdayMinutesNeeded)
+            } else {
+                settings.lastServerBalance.ifBlank { "+0:00" }
+            }
+            prefsRepository.saveServerBalance(balance)
+            return@withContext balance
+        }
+
+        if (settings.username.isBlank() || password.isBlank()) {
             return@withContext null
         }
 
@@ -376,14 +389,79 @@ class TuntivelhoRepository(
         val candidateUrls = buildCandidateUrls(settings.serverUrl)
 
         for (targetUrl in candidateUrls) {
-            val taseSec = fetchBalance(targetUrl, token)
-            if (taseSec != null) {
-                val formatted = formatTaseSeconds(taseSec)
-                prefsRepository.saveServerBalance(formatted)
-                return@withContext formatted
+            val res = fetchKellokorttiFull(targetUrl, token)
+            if (res != null) {
+                return@withContext res
             }
         }
         return@withContext null
+    }
+
+    private fun fetchKellokorttiFull(targetUrl: String, token: String): String? {
+        val payload = GraphQLQueries.buildKellokorttiFullPayload()
+        val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+
+        return try {
+            val request = Request.Builder()
+                .url(targetUrl)
+                .post(payload.toRequestBody(jsonMediaType))
+                .addHeaders(token)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val code = response.code
+            val body = response.body?.string() ?: ""
+            response.close()
+
+            Log.d("Tuntivelho", "Kellokortti full response ($code): $body")
+            val newEntry = "HTTP $code\nURL: $targetUrl\nResponse Body:\n$body"
+            if (rawApiResponse.value.startsWith("Ei vielä") || code in 200..303) {
+                rawApiResponse.value = newEntry
+            } else {
+                rawApiResponse.value += "\n\n---\n\n$newEntry"
+            }
+
+            if (code in 200..303) {
+                val gqlResp = parseGraphQLResponse(body)
+                val kellokortti = gqlResp?.data?.kellokortti
+
+                val defaults = kellokortti?.selectiondefaults
+                if (defaults?.talaatuid != null && defaults.tyopisteid != null) {
+                    prefsRepository.saveSelectionDefaults(defaults.talaatuid, defaults.tyopisteid)
+                }
+
+                val prevStamp = kellokortti?.previousstamp
+                if (prevStamp != null && prevStamp.suuntaid != null) {
+                    val helsinkiTz = java.util.TimeZone.getTimeZone("Europe/Helsinki")
+                    Log.d("Tuntivelho", "Kellokortti status update: suuntaid=${prevStamp.suuntaid}, aika=${prevStamp.aika}")
+                    if (prevStamp.suuntaid == 0) { // 0 = Sisään (IN) in Tuntivelho API
+                        var actualTs = System.currentTimeMillis()
+                        val serverAikaTs = prevStamp.aika
+                        if (serverAikaTs != null && serverAikaTs > 0L) {
+                            val serverMillis = if (serverAikaTs < 10000000000L) serverAikaTs * 1000L else serverAikaTs
+                            actualTs = serverMillis - helsinkiTz.getOffset(serverMillis)
+                        }
+                        prefsRepository.updateClockInStatus(isClockedIn = true, clockInTs = actualTs)
+                    } else { // 1, 2, etc. = Ulos (OUT)
+                        prefsRepository.updateClockInStatus(isClockedIn = false, clockInTs = 0L)
+                    }
+                }
+
+                val taseSec = kellokortti?.tase?.tase
+                if (taseSec != null) {
+                    val formatted = formatTaseSeconds(taseSec)
+                    prefsRepository.saveServerBalance(formatted)
+                    formatted
+                } else {
+                    ""
+                }
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("Tuntivelho", "Error fetching kellokortti full: ${e.localizedMessage}")
+            null
+        }
     }
 
     private fun fetchKellokorttiDefaults(targetUrl: String, token: String): com.example.data.network.SelectionDefaults? {
@@ -482,8 +560,10 @@ class TuntivelhoRepository(
         actionType: String,
         isSuccess: Boolean,
         message: String,
-        balance: String = ""
+        balance: String = "",
+        rawDetails: String = ""
     ) {
+        val detailsToSave = if (rawDetails.isNotBlank()) rawDetails else rawApiResponse.value
         stampDao.insertLog(
             StampEntity(
                 timestamp = timestamp,
@@ -491,7 +571,8 @@ class TuntivelhoRepository(
                 actionType = actionType,
                 isSuccess = isSuccess,
                 message = message,
-                balance = balance
+                balance = balance,
+                rawDetails = detailsToSave
             )
         )
     }

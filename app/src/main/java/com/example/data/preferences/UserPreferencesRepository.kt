@@ -36,10 +36,19 @@ data class AppSettings(
     val departureWindowStart: String = "14:30",
     val departureWindowEnd: String = "18:30",
     val lastArrivalNotifiedDate: String = "",
-    val lastDepartureNotifiedDate: String = ""
+    val lastDepartureNotifiedDate: String = "",
+    val targetMode: String = "DAILY", // "DAILY" or "WEEKLY"
+    val targetHoursDaily: Double = 7.5,
+    val targetHoursWeekly: Double = 37.5,
+    val targetSoundAlertEnabled: Boolean = true,
+    val targetVibrationAlertEnabled: Boolean = true,
+    val lastTargetAlertDate: String = ""
 ) {
     val totalWorkdayMinutesNeeded: Int
         get() = (workdayHours * 60) + workdayMinutes + lunchBreakMinutes
+
+    val currentTargetMinutesNeeded: Int
+        get() = if (targetMode == "WEEKLY") (targetHoursWeekly * 60).toInt() else (targetHoursDaily * 60).toInt()
 }
 
 class UserPreferencesRepository(context: Context) {
@@ -82,6 +91,13 @@ class UserPreferencesRepository(context: Context) {
         val lastArrNotif = prefs.getString(KEY_LAST_ARR_NOTIF, "") ?: ""
         val lastDepNotif = prefs.getString(KEY_LAST_DEP_NOTIF, "") ?: ""
 
+        val targetMode = prefs.getString(KEY_TARGET_MODE, "DAILY") ?: "DAILY"
+        val targetDaily = prefs.getFloat(KEY_TARGET_DAILY, 7.5f).toDouble()
+        val targetWeekly = prefs.getFloat(KEY_TARGET_WEEKLY, 37.5f).toDouble()
+        val targetSound = prefs.getBoolean(KEY_TARGET_SOUND, true)
+        val targetVib = prefs.getBoolean(KEY_TARGET_VIB, true)
+        val lastTargetAlert = prefs.getString(KEY_LAST_TARGET_ALERT, "") ?: ""
+
         return AppSettings(
             username = username,
             morningReminderTime = morning,
@@ -108,7 +124,13 @@ class UserPreferencesRepository(context: Context) {
             departureWindowStart = depStart,
             departureWindowEnd = depEnd,
             lastArrivalNotifiedDate = lastArrNotif,
-            lastDepartureNotifiedDate = lastDepNotif
+            lastDepartureNotifiedDate = lastDepNotif,
+            targetMode = targetMode,
+            targetHoursDaily = targetDaily,
+            targetHoursWeekly = targetWeekly,
+            targetSoundAlertEnabled = targetSound,
+            targetVibrationAlertEnabled = targetVib,
+            lastTargetAlertDate = lastTargetAlert
         )
     }
 
@@ -263,6 +285,32 @@ class UserPreferencesRepository(context: Context) {
         }
     }
 
+    fun saveTargetSettings(
+        targetMode: String,
+        targetHoursDaily: Double,
+        targetHoursWeekly: Double,
+        targetSoundAlertEnabled: Boolean,
+        targetVibrationAlertEnabled: Boolean
+    ) {
+        prefs.edit()
+            .putString(KEY_TARGET_MODE, targetMode)
+            .putFloat(KEY_TARGET_DAILY, targetHoursDaily.toFloat())
+            .putFloat(KEY_TARGET_WEEKLY, targetHoursWeekly.toFloat())
+            .putBoolean(KEY_TARGET_SOUND, targetSoundAlertEnabled)
+            .putBoolean(KEY_TARGET_VIB, targetVibrationAlertEnabled)
+            .apply()
+
+        _settings.value = loadSettings()
+    }
+
+    fun updateLastTargetAlertDate(dateStr: String) {
+        prefs.edit()
+            .putString(KEY_LAST_TARGET_ALERT, dateStr)
+            .apply()
+
+        _settings.value = loadSettings()
+    }
+
     fun getTalaatuid(): Int = prefs.getInt(KEY_TALAATUID, 1)
     fun getTyopisteid(): Int = prefs.getInt(KEY_TYOPISTEID, 5)
 
@@ -299,5 +347,11 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_DEPARTURE_END = "departure_end"
         private const val KEY_LAST_ARR_NOTIF = "last_arr_notif"
         private const val KEY_LAST_DEP_NOTIF = "last_dep_notif"
+        private const val KEY_TARGET_MODE = "target_mode"
+        private const val KEY_TARGET_DAILY = "target_daily"
+        private const val KEY_TARGET_WEEKLY = "target_weekly"
+        private const val KEY_TARGET_SOUND = "target_sound"
+        private const val KEY_TARGET_VIB = "target_vib"
+        private const val KEY_LAST_TARGET_ALERT = "last_target_alert"
     }
 }

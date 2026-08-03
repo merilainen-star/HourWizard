@@ -18,12 +18,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -31,27 +36,69 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.db.StampEntity
 import com.example.data.preferences.AppSettings
 import com.example.ui.MainViewModel
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
+
+fun calculateWeeklyWorkedMinutes(logs: List<StampEntity>, currentSessionMinutes: Int): Int {
+    val calendar = Calendar.getInstance(TimeZone.getTimeZone("Europe/Helsinki")).apply {
+        firstDayOfWeek = Calendar.MONDAY
+        set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    val mondayStartTs = calendar.timeInMillis
+
+    val weekLogs = logs.filter { it.timestamp >= mondayStartTs && it.isSuccess }.sortedBy { it.timestamp }
+
+    var totalLogMinutes = 0
+    var lastInTs: Long? = null
+
+    for (log in weekLogs) {
+        if (log.actionType.contains("SISÄÄN", ignoreCase = true)) {
+            lastInTs = log.timestamp
+        } else if (log.actionType.contains("ULOS", ignoreCase = true) && lastInTs != null) {
+            val diffMs = log.timestamp - lastInTs
+            if (diffMs > 0) {
+                totalLogMinutes += (diffMs / (60 * 1000L)).toInt()
+            }
+            lastInTs = null
+        }
+    }
+
+    return totalLogMinutes + currentSessionMinutes
+}
 
 @Composable
 fun HomeScreen(
@@ -62,6 +109,25 @@ fun HomeScreen(
     val settings by viewModel.settings.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val balanceStr by viewModel.currentBalanceStr.collectAsState()
+    val logs by viewModel.logs.collectAsState()
+
+    val currentSessionMinutes = if (settings.isClockedIn && settings.clockInTimestamp > 0L) {
+        ((System.currentTimeMillis() - settings.clockInTimestamp) / 60000L).toInt()
+    } else 0
+
+    val isWeekly = settings.targetMode == "WEEKLY"
+    val targetGoalHours = if (isWeekly) settings.targetHoursWeekly else settings.targetHoursDaily
+    val targetMinsTotal = (targetGoalHours * 60).toInt()
+
+    val workedMinsTotal = if (isWeekly) {
+        calculateWeeklyWorkedMinutes(logs, currentSessionMinutes)
+    } else {
+        currentSessionMinutes
+    }
+
+    val progressFraction = if (targetMinsTotal > 0) (workedMinsTotal.toFloat() / targetMinsTotal.toFloat()).coerceIn(0f, 1f) else 0f
+    val percentInt = (progressFraction * 100).toInt()
+    val isTargetReached = targetMinsTotal > 0 && workedMinsTotal >= targetMinsTotal
 
     val clockInTimeText = if (settings.clockInTimestamp > 0L) {
         val helsinkiTz = java.util.TimeZone.getTimeZone("Europe/Helsinki")
@@ -307,48 +373,135 @@ fun HomeScreen(
             }
         }
 
-        // Daily Work Goal Card
+        // Target Hours & Progress Bar Card
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("target_progress_card"),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             )
         ) {
-            Row(
-                modifier = Modifier.padding(18.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Schedule,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(if (isTargetReached) Color(0xFFD1FAE5) else MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Flag,
+                                contentDescription = null,
+                                tint = if (isTargetReached) Color(0xFF059669) else MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = if (isWeekly) "Viikkotavoitteen kertymä" else "Päivätavoitteen kertymä",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            val workedHrs = workedMinsTotal / 60
+                            val workedMins = workedMinsTotal % 60
+                            val targetHrs = targetMinsTotal / 60
+                            val targetMins = targetMinsTotal % 60
+                            Text(
+                                text = "${workedHrs}h ${workedMins}min / ${targetHrs}h ${targetMins}min",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isTargetReached) Color(0xFF059669) else MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = "$percentInt %",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isTargetReached) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                // Smooth Progress Bar
+                LinearProgressIndicator(
+                    progress = { progressFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(6.dp)),
+                    color = if (isTargetReached) Color(0xFF059669) else MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                )
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Tavoitetyöpäivä",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${settings.workdayHours} h ${settings.workdayMinutes} min  (+ ${settings.lunchBreakMinutes} min ruokatauko)",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    if (isTargetReached) {
+                        val overMins = workedMinsTotal - targetMinsTotal
+                        val overHrs = overMins / 60
+                        val overRestMins = overMins % 60
+                        Text(
+                            text = "🎉 Tavoite täynnä! Plussalla: +${overHrs}h ${overRestMins}min",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF059669)
+                        )
+                    } else {
+                        val remMins = targetMinsTotal - workedMinsTotal
+                        val remHrs = remMins / 60
+                        val remRestMins = remMins % 60
+                        Text(
+                            text = "Aikaa tavoitteeseen: ${remHrs}h ${remRestMins}min",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (settings.targetSoundAlertEnabled) {
+                            Icon(
+                                imageVector = Icons.Default.VolumeUp,
+                                contentDescription = "Äänimerkki päällä",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        if (settings.targetVibrationAlertEnabled) {
+                            Icon(
+                                imageVector = Icons.Default.Vibration,
+                                contentDescription = "Värinähälytys päällä",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
+
+
 
         if (settings.username.isBlank()) {
             Card(

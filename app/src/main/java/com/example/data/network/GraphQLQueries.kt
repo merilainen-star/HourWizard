@@ -138,6 +138,19 @@ object GraphQLQueries {
         """.trimIndent()
     }
 
+    fun buildKellokorttiFullPayload(): String {
+        return """
+            [
+              {
+                "query": "query kellokortti(${'$'}subuser: Int) { kellokortti(subuser: ${'$'}subuser) { previousstamp { tv_leimaid aika suuntaid } selectiondefaults { talaatuid tyopisteid } tase { tase } } }",
+                "variables": {
+                  "subuser": null
+                }
+              }
+            ]
+        """.trimIndent()
+    }
+
     fun buildBalancePayload(): String {
         return """
             [

@@ -250,6 +250,48 @@ class NotificationHelper(private val context: Context) {
         notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
+    fun showTargetReachedNotification(title: String, message: String, playSound: Boolean, vibrate: Boolean) {
+        if (vibrate) {
+            triggerHapticFeedback()
+        }
+
+        val contentIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val contentPendingIntent = PendingIntent.getActivity(
+            context,
+            301,
+            contentIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setAutoCancel(true)
+            .setContentIntent(contentPendingIntent)
+
+        if (playSound) {
+            builder.setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+            try {
+                val soundUri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+                val ringtone = android.media.RingtoneManager.getRingtone(context, soundUri)
+                ringtone?.play()
+            } catch (_: Exception) {
+            }
+        }
+
+        if (vibrate) {
+            builder.setVibrate(vibrationPattern)
+        }
+
+        notificationManager.notify(NOTIFICATION_TARGET_ID, builder.build())
+    }
+
     fun cancelNotification() {
         notificationManager.cancel(NOTIFICATION_ID)
     }
@@ -257,5 +299,6 @@ class NotificationHelper(private val context: Context) {
     companion object {
         const val CHANNEL_ID = "tuntivelho_notifications"
         const val NOTIFICATION_ID = 8881
+        const val NOTIFICATION_TARGET_ID = 8882
     }
 }

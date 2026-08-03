@@ -28,6 +28,7 @@ data class LoginPayload(
 @JsonClass(generateAdapter = true)
 data class KellokorttiPayload(
     @Json(name = "previousstamp") val previousstamp: PreviousStamp? = null,
+    @Json(name = "previousstamps") val previousstamps: List<PreviousStamp>? = null,
     @Json(name = "selectiondefaults") val selectiondefaults: SelectionDefaults? = null,
     @Json(name = "tase") val tase: TaseData? = null
 )

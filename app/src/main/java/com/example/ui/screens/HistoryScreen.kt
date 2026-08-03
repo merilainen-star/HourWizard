@@ -15,13 +15,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -29,16 +34,25 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.data.db.StampEntity
 import com.example.ui.MainViewModel
 import com.example.ui.components.BalanceChartCard
 
@@ -49,6 +63,10 @@ fun HistoryScreen(
 ) {
     val logs by viewModel.logs.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val rawResponse by viewModel.rawApiResponse.collectAsState()
+
+    var selectedLogForDebug by remember { mutableStateOf<StampEntity?>(null) }
+    var showServerDebugDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -75,13 +93,29 @@ fun HistoryScreen(
                 )
             }
 
-            if (logs.isNotEmpty()) {
-                IconButton(onClick = { viewModel.clearHistory() }) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { showServerDebugDialog = true },
+                    modifier = Modifier.testTag("server_debug_log_button")
+                ) {
                     Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Tyhjennä historia",
-                        tint = MaterialTheme.colorScheme.error
+                        imageVector = Icons.Default.BugReport,
+                        contentDescription = "Palvelimen API-lokit",
+                        tint = MaterialTheme.colorScheme.primary
                     )
+                }
+
+                if (logs.isNotEmpty()) {
+                    IconButton(
+                        onClick = { viewModel.clearHistory() },
+                        modifier = Modifier.testTag("clear_history_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Tyhjennä historia",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }
@@ -230,11 +264,153 @@ fun HistoryScreen(
                                     }
                                 }
                             }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            IconButton(
+                                onClick = { selectedLogForDebug = log },
+                                modifier = Modifier.testTag("log_item_debug_${log.id}")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.BugReport,
+                                    contentDescription = "Näytä leimauksen lokitiedot",
+                                    tint = MaterialTheme.colorScheme.outline
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    // Individual Log Debug Dialog
+    selectedLogForDebug?.let { log ->
+        val clipboardManager = LocalClipboardManager.current
+        val detailsText = remember(log) {
+            buildString {
+                appendLine("=== LEIMAUKSEN LOKITIEDOT ===")
+                appendLine("Tyyppi: ${log.actionType}")
+                appendLine("Aika: ${log.formattedTime} (ts=${log.timestamp})")
+                appendLine("Tila: ${if (log.isSuccess) "Onnistunut" else "Virhe/Epäonnistunut"}")
+                appendLine("Viesti: ${log.message}")
+                if (log.balance.isNotBlank()) appendLine("Saldo: ${log.balance}")
+                appendLine("\n--- RAAKA API / JSON -LOKI ---")
+                if (log.rawDetails.isNotBlank()) {
+                    appendLine(log.rawDetails)
+                } else if (rawResponse.isNotBlank()) {
+                    appendLine(rawResponse)
+                } else {
+                    appendLine("Ei erillistä raakalokitietoa tallennettuna.")
+                }
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = { selectedLogForDebug = null },
+            title = {
+                Text(
+                    text = "Leimauksen lokitiedot (${log.actionType})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Yksittäisen leimauksen raaka API-vastaus ja lokitiedot:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .padding(10.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = detailsText,
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(detailsText))
+                    }
+                ) {
+                    Text("Kopioi")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedLogForDebug = null }) {
+                    Text("Sulje")
+                }
+            }
+        )
+    }
+
+    // Server API Raw Response Dialog (Header button)
+    if (showServerDebugDialog) {
+        val clipboardManager = LocalClipboardManager.current
+        AlertDialog(
+            onDismissRequest = { showServerDebugDialog = false },
+            title = {
+                Text(
+                    text = "Viimeisin Palvelimen API-Vastaus",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Alla viimeisimmän palvelinkutsun raaka vastaus ja JSON-rakenne:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(280.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .padding(10.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = rawResponse.ifBlank { "Ei vielä tehtyjä palvelinhakuja." },
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(rawResponse))
+                    }
+                ) {
+                    Text("Kopioi")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showServerDebugDialog = false }) {
+                    Text("Sulje")
+                }
+            }
+        )
     }
 }
 
