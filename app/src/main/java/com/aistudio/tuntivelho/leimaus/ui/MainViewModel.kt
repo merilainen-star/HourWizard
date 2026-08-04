@@ -79,24 +79,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         targetMinutesNeeded = s.requiredElapsedMinutes(now)
                     )
 
-                    // Target goal alert check — compare against worked time, so the
-                    // break deduction pushes the target out instead of firing early
-                    val workedMinutes = s.workedMinutesSinceClockIn(now)
-                    val targetMins = s.currentTargetMinutesNeeded
-                    if (targetMins > 0 && workedMinutes >= targetMins) {
-                        val helsinkiTz = java.util.TimeZone.getTimeZone("Europe/Helsinki")
-                        val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply { timeZone = helsinkiTz }.format(Date())
-                        if (s.lastTargetAlertDate != todayStr && (s.targetSoundAlertEnabled || s.targetVibrationAlertEnabled)) {
-                            val modeText = if (s.targetMode == "WEEKLY") "Työviikon" else "Työpäivän"
-                            notificationHelper.showTargetReachedNotification(
-                                title = "🎉 $modeText tavoite täynnä!",
-                                message = "$modeText tavoite saavutettu. Saldo siirtyy plussalle (+ ylityöt)!",
-                                playSound = s.targetSoundAlertEnabled,
-                                vibrate = s.targetVibrationAlertEnabled
-                            )
-                            prefsRepository.updateLastTargetAlertDate(todayStr)
-                        }
-                    }
+                    // Target goal alert check has been moved to AlarmReceiver background ticker
                 } else {
                     _currentBalanceStr.value = "0:00"
                 }

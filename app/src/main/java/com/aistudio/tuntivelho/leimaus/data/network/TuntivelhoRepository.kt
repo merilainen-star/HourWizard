@@ -477,7 +477,7 @@ class TuntivelhoRepository(
                             actualTs = serverMillis - helsinkiTz.getOffset(serverMillis)
                         }
                         prefsRepository.updateClockInStatus(isClockedIn = true, clockInTs = actualTs)
-                    } else { // 1, 2, etc. = Ulos (OUT)
+                    } else if (!prefsRepository.settings.value.isOnBreak) { // 1, etc. = Ulos (OUT); preserve session if user is on break
                         prefsRepository.updateClockInStatus(isClockedIn = false, clockInTs = 0L)
                     }
                 }
