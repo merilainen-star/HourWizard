@@ -75,6 +75,24 @@ object NotificationFilterUtils {
         return true
     }
 
+    /**
+     * True when the Helsinki wall clock at [currentTimeMillis] has reached [timeOfDay]
+     * ("HH:mm" or "HH.mm"). Returns false for an unparseable time so callers stay quiet
+     * rather than firing at the wrong moment.
+     */
+    fun isAtOrAfterTimeOfDay(currentTimeMillis: Long, timeOfDay: String): Boolean {
+        val parts = timeOfDay.split(":", ".")
+        if (parts.size < 2) return false
+        val hour = parts[0].trim().toIntOrNull() ?: return false
+        val minute = parts[1].trim().toIntOrNull() ?: return false
+
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("Europe/Helsinki")).apply {
+            timeInMillis = currentTimeMillis
+        }
+        val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        return nowMinutes >= (hour * 60) + minute
+    }
+
     private fun parseDateToMidnight(dateStr: String, dateFormat: SimpleDateFormat): Long? {
         if (dateStr.isBlank()) return null
         return try {

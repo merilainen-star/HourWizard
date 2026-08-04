@@ -21,23 +21,46 @@ class AlarmReceiver : BroadcastReceiver() {
         val alarmType = intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_TYPE)
         val isAllowed = NotificationFilterUtils.isNotificationAllowedForToday(settings)
 
-        // Evaluate geofence location rules if enabled using FusedLocationProviderClient with LocationManager fallback
+        // Evaluate geofence location rules if enabled using FusedLocationProviderClient with LocationManager fallback.
+        // lastLocation resolves asynchronously, so hold the broadcast open with goAsync() —
+        // without it onReceive returns immediately and the process may die before the callback runs.
         if (settings.isGeofenceEnabled) {
+            val pendingResult = goAsync()
+            var finished = false
+            val finishOnce = {
+                if (!finished) {
+                    finished = true
+                    pendingResult.finish()
+                }
+            }
             try {
                 val fusedClient = LocationServices.getFusedLocationProviderClient(context)
                 fusedClient.lastLocation.addOnSuccessListener { loc ->
-                    if (loc != null) {
-                        evaluateAndTriggerGeofence(context, loc, settings, prefsRepository, notificationHelper)
-                    } else {
-                        fallbackLocationCheck(context, settings, prefsRepository, notificationHelper)
+                    try {
+                        if (loc != null) {
+                            evaluateAndTriggerGeofence(loc, settings, prefsRepository, notificationHelper)
+                        } else {
+                            fallbackLocationCheck(context, settings, prefsRepository, notificationHelper)
+                        }
+                    } finally {
+                        finishOnce()
                     }
                 }.addOnFailureListener {
-                    fallbackLocationCheck(context, settings, prefsRepository, notificationHelper)
+                    try {
+                        fallbackLocationCheck(context, settings, prefsRepository, notificationHelper)
+                    } finally {
+                        finishOnce()
+                    }
                 }
             } catch (_: SecurityException) {
                 // Location permission not granted
+                finishOnce()
             } catch (_: Exception) {
-                fallbackLocationCheck(context, settings, prefsRepository, notificationHelper)
+                try {
+                    fallbackLocationCheck(context, settings, prefsRepository, notificationHelper)
+                } finally {
+                    finishOnce()
+                }
             }
         }
 
@@ -77,10 +100,17 @@ class AlarmReceiver : BroadcastReceiver() {
                         targetMinutesNeeded = settings.requiredElapsedMinutes(nowMs)
                     )
 
-                    notificationHelper.showEveningNotification(
-                        clockInTimeStr = clockInTimeStr,
-                        balanceStr = balanceStr
-                    )
+                    // The ticker now runs from clock-in so the target alert is not gated on
+                    // the evening alarm. Hold back the "Kotiin?" notification until the
+                    // evening time, or it would nag every minute of the workday.
+                    if (alarmType == AlarmScheduler.EXTRA_TYPE_EVENING ||
+                        NotificationFilterUtils.isAtOrAfterTimeOfDay(nowMs, settings.eveningReminderTime)
+                    ) {
+                        notificationHelper.showEveningNotification(
+                            clockInTimeStr = clockInTimeStr,
+                            balanceStr = balanceStr
+                        )
+                    }
 
                     // Target goal alert check in background ticker
                     val workedMinutes = settings.workedMinutesSinceClockIn(nowMs)
@@ -123,7 +153,6 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     private fun evaluateAndTriggerGeofence(
-        context: Context,
         loc: android.location.Location,
         settings: com.aistudio.tuntivelho.leimaus.data.preferences.AppSettings,
         prefsRepository: UserPreferencesRepository,
@@ -154,8 +183,11 @@ class AlarmReceiver : BroadcastReceiver() {
         prefsRepository: UserPreferencesRepository,
         notificationHelper: NotificationHelper
     ) {
-        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
-        if (locationManager != null) {
+        // Reached from async callbacks, where an uncaught SecurityException would
+        // crash the process rather than surface as a failed broadcast
+        try {
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+                ?: return
             var loc: android.location.Location? = null
             if (locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)) {
                 loc = locationManager.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
@@ -164,8 +196,11 @@ class AlarmReceiver : BroadcastReceiver() {
                 loc = locationManager.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
             }
             if (loc != null) {
-                evaluateAndTriggerGeofence(context, loc, settings, prefsRepository, notificationHelper)
+                evaluateAndTriggerGeofence(loc, settings, prefsRepository, notificationHelper)
             }
+        } catch (_: SecurityException) {
+            // Location permission not granted
+        } catch (_: Exception) {
         }
     }
 }

@@ -201,6 +201,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     notificationHelper.cancelNotification()
                     val s = settings.value
                     alarmScheduler.scheduleAlarms(s.morningReminderTime, s.eveningReminderTime)
+                    // The target-reached alert now lives in the minute ticker, so it has to
+                    // run from clock-in onwards — the target is usually met before the
+                    // evening alarm would otherwise start the ticker
+                    alarmScheduler.scheduleEveningTicker()
                     _uiMessage.value = UiMessage(result.message, isError = false)
                 }
                 is StampResult.Error -> {
