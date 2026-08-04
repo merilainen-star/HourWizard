@@ -196,7 +196,7 @@ class TuntivelhoRepository(
                 isBreakStart -> "Tauolle klo $timeStr (Demotila)."
                 isBreakEnd -> "Tauolta takaisin klo $timeStr (Demotila)."
                 else -> {
-                    val balanceStr = calculateBalance(settings.clockInTimestamp, now, settings.totalWorkdayMinutesNeeded)
+                    val balanceStr = calculateBalance(settings.clockInTimestamp, now, settings.requiredElapsedMinutes(now))
                     "Ulosleimaus tehty klo $timeStr (Demotila). Saldo: $balanceStr"
                 }
             }
@@ -204,7 +204,7 @@ class TuntivelhoRepository(
                 isClockIn -> prefsRepository.updateClockInStatus(isClockedIn = true, clockInTs = now)
                 isClockOut -> prefsRepository.updateClockInStatus(isClockedIn = false, clockInTs = 0L)
                 // Break stamps keep the running clock-in session intact
-                else -> prefsRepository.updateBreakStatus(isOnBreak = isBreakStart)
+                else -> if (isBreakStart) prefsRepository.startBreak(now) else prefsRepository.endBreak(now)
             }
             stampDao.insertLog(
                 StampEntity(
@@ -318,7 +318,7 @@ class TuntivelhoRepository(
                         balanceStr = formatTaseSeconds(taseSeconds)
                         prefsRepository.saveServerBalance(balanceStr)
                     } else if (isClockOut) {
-                        balanceStr = calculateBalance(settings.clockInTimestamp, actualTimestamp, settings.totalWorkdayMinutesNeeded)
+                        balanceStr = calculateBalance(settings.clockInTimestamp, actualTimestamp, settings.requiredElapsedMinutes(actualTimestamp))
                         prefsRepository.saveServerBalance(balanceStr)
                     }
 
@@ -333,7 +333,11 @@ class TuntivelhoRepository(
                         isClockIn -> prefsRepository.updateClockInStatus(isClockedIn = true, clockInTs = actualTimestamp)
                         isClockOut -> prefsRepository.updateClockInStatus(isClockedIn = false, clockInTs = 0L)
                         // Break stamps keep the running clock-in session intact
-                        else -> prefsRepository.updateBreakStatus(isOnBreak = isBreakStart)
+                        else -> if (isBreakStart) {
+                            prefsRepository.startBreak(actualTimestamp)
+                        } else {
+                            prefsRepository.endBreak(actualTimestamp)
+                        }
                     }
 
                     recordLog(actualTimestamp, actualFullTimeStr, actionTitle, isSuccess = true, message = successMsg, balance = balanceStr)
@@ -385,7 +389,7 @@ class TuntivelhoRepository(
 
         if (settings.isDemoMode) {
             val balance = if (settings.isClockedIn && settings.clockInTimestamp > 0L) {
-                calculateBalance(settings.clockInTimestamp, System.currentTimeMillis(), settings.totalWorkdayMinutesNeeded)
+                calculateBalance(settings.clockInTimestamp, System.currentTimeMillis(), settings.requiredElapsedMinutes(System.currentTimeMillis()))
             } else {
                 settings.lastServerBalance.ifBlank { "+0:00" }
             }

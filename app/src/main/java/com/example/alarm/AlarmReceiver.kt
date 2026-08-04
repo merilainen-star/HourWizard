@@ -87,10 +87,11 @@ class AlarmReceiver : BroadcastReceiver() {
                         .apply { timeZone = helsinkiTz }
                         .format(Date(settings.clockInTimestamp))
 
+                    val nowMs = System.currentTimeMillis()
                     val balanceStr = TuntivelhoRepository.calculateBalance(
                         clockInTs = settings.clockInTimestamp,
-                        currentTs = System.currentTimeMillis(),
-                        targetMinutesNeeded = settings.totalWorkdayMinutesNeeded
+                        currentTs = nowMs,
+                        targetMinutesNeeded = settings.requiredElapsedMinutes(nowMs)
                     )
 
                     notificationHelper.showEveningNotification(

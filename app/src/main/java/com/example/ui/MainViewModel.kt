@@ -76,13 +76,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _currentBalanceStr.value = TuntivelhoRepository.calculateBalance(
                         clockInTs = s.clockInTimestamp,
                         currentTs = now,
-                        targetMinutesNeeded = s.totalWorkdayMinutesNeeded
+                        targetMinutesNeeded = s.requiredElapsedMinutes(now)
                     )
 
-                    // Target goal alert check
-                    val elapsedMinutes = ((now - s.clockInTimestamp) / 60000L).toInt()
+                    // Target goal alert check — compare against worked time, so the
+                    // break deduction pushes the target out instead of firing early
+                    val workedMinutes = s.workedMinutesSinceClockIn(now)
                     val targetMins = s.currentTargetMinutesNeeded
-                    if (targetMins > 0 && elapsedMinutes >= targetMins) {
+                    if (targetMins > 0 && workedMinutes >= targetMins) {
                         val helsinkiTz = java.util.TimeZone.getTimeZone("Europe/Helsinki")
                         val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply { timeZone = helsinkiTz }.format(Date())
                         if (s.lastTargetAlertDate != todayStr && (s.targetSoundAlertEnabled || s.targetVibrationAlertEnabled)) {

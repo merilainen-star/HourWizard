@@ -22,6 +22,10 @@ data class AppSettings(
     val isClockedIn: Boolean = false,
     val clockInTimestamp: Long = 0L,
     val isOnBreak: Boolean = false,
+    /** When the currently running break started; 0 when not on a break. */
+    val breakStartTimestamp: Long = 0L,
+    /** Milliseconds of completed breaks during the current clock-in session. */
+    val completedBreakMillis: Long = 0L,
     val lastServerBalance: String = "",
     val enabledDaysString: String = "1,2,3,4,5",
     val isVacationEnabled: Boolean = false,
@@ -47,6 +51,31 @@ data class AppSettings(
 ) {
     val totalWorkdayMinutesNeeded: Int
         get() = (workdayHours * 60) + workdayMinutes + lunchBreakMinutes
+
+    /**
+     * Tuntivelho always charges at least [lunchBreakMinutes] for a break. Stamping a
+     * shorter break still costs the full minimum; a longer one costs its real length
+     * and pushes the end of the workday out by the excess. Never stamping a break is
+     * just the zero-minute case — the minimum is deducted automatically.
+     */
+    fun breakDeductionMinutes(now: Long): Int {
+        val runningMillis = if (isOnBreak && breakStartTimestamp > 0L) {
+            (now - breakStartTimestamp).coerceAtLeast(0L)
+        } else 0L
+        val actualMinutes = ((completedBreakMillis + runningMillis) / 60_000L).toInt()
+        return maxOf(lunchBreakMinutes, actualMinutes)
+    }
+
+    /** Wall-clock minutes that must elapse since clock-in to complete the workday. */
+    fun requiredElapsedMinutes(now: Long): Int =
+        (workdayHours * 60) + workdayMinutes + breakDeductionMinutes(now)
+
+    /** Minutes actually worked since clock-in, with the break deduction applied. */
+    fun workedMinutesSinceClockIn(now: Long): Int {
+        if (!isClockedIn || clockInTimestamp <= 0L) return 0
+        val elapsed = ((now - clockInTimestamp) / 60_000L).toInt()
+        return (elapsed - breakDeductionMinutes(now)).coerceAtLeast(0)
+    }
 
     val currentTargetMinutesNeeded: Int
         get() = if (targetMode == "WEEKLY") (targetHoursWeekly * 60).toInt() else (targetHoursDaily * 60).toInt()
@@ -75,6 +104,8 @@ class UserPreferencesRepository(context: Context) {
         val isClockedIn = prefs.getBoolean(KEY_IS_CLOCKED_IN, false)
         val clockInTs = prefs.getLong(KEY_CLOCK_IN_TS, 0L)
         val isOnBreak = prefs.getBoolean(KEY_IS_ON_BREAK, false)
+        val breakStartTs = prefs.getLong(KEY_BREAK_START_TS, 0L)
+        val completedBreakMs = prefs.getLong(KEY_COMPLETED_BREAK_MS, 0L)
         val lastBalance = prefs.getString(KEY_SERVER_BALANCE, "") ?: ""
         val enabledDays = prefs.getString(KEY_ENABLED_DAYS, "1,2,3,4,5") ?: "1,2,3,4,5"
         val isVacation = prefs.getBoolean(KEY_IS_VACATION, false)
@@ -112,6 +143,8 @@ class UserPreferencesRepository(context: Context) {
             isClockedIn = isClockedIn,
             clockInTimestamp = clockInTs,
             isOnBreak = isOnBreak,
+            breakStartTimestamp = breakStartTs,
+            completedBreakMillis = completedBreakMs,
             lastServerBalance = lastBalance,
             enabledDaysString = enabledDays,
             isVacationEnabled = isVacation,
@@ -267,16 +300,34 @@ class UserPreferencesRepository(context: Context) {
         prefs.edit()
             .putBoolean(KEY_IS_CLOCKED_IN, isClockedIn)
             .putLong(KEY_CLOCK_IN_TS, clockInTs)
-            // A fresh in/out stamp always ends any running break
+            // A fresh in/out stamp always ends any running break and starts a new
+            // session, so accumulated break time resets with it
             .putBoolean(KEY_IS_ON_BREAK, false)
+            .putLong(KEY_BREAK_START_TS, 0L)
+            .putLong(KEY_COMPLETED_BREAK_MS, 0L)
             .apply()
 
         _settings.value = loadSettings()
     }
 
-    fun updateBreakStatus(isOnBreak: Boolean) {
+    fun startBreak(startTs: Long) {
         prefs.edit()
-            .putBoolean(KEY_IS_ON_BREAK, isOnBreak)
+            .putBoolean(KEY_IS_ON_BREAK, true)
+            .putLong(KEY_BREAK_START_TS, startTs)
+            .apply()
+
+        _settings.value = loadSettings()
+    }
+
+    fun endBreak(endTs: Long) {
+        val startTs = prefs.getLong(KEY_BREAK_START_TS, 0L)
+        val elapsed = if (startTs > 0L) (endTs - startTs).coerceAtLeast(0L) else 0L
+        val accumulated = prefs.getLong(KEY_COMPLETED_BREAK_MS, 0L) + elapsed
+
+        prefs.edit()
+            .putBoolean(KEY_IS_ON_BREAK, false)
+            .putLong(KEY_BREAK_START_TS, 0L)
+            .putLong(KEY_COMPLETED_BREAK_MS, accumulated)
             .apply()
 
         _settings.value = loadSettings()
@@ -343,6 +394,8 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_IS_CLOCKED_IN = "is_clocked_in"
         private const val KEY_CLOCK_IN_TS = "clock_in_ts"
         private const val KEY_IS_ON_BREAK = "is_on_break"
+        private const val KEY_BREAK_START_TS = "break_start_ts"
+        private const val KEY_COMPLETED_BREAK_MS = "completed_break_ms"
         private const val KEY_SERVER_BALANCE = "server_balance"
         private const val KEY_TALAATUID = "selection_talaatuid"
         private const val KEY_TYOPISTEID = "selection_tyopisteid"

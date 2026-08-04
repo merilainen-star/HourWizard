@@ -71,7 +71,11 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-fun calculateWeeklyWorkedMinutes(logs: List<StampEntity>, currentSessionMinutes: Int): Int {
+fun calculateWeeklyWorkedMinutes(
+    logs: List<StampEntity>,
+    currentSessionMinutes: Int,
+    lunchBreakMinutes: Int = 30
+): Int {
     val calendar = Calendar.getInstance(TimeZone.getTimeZone("Europe/Helsinki")).apply {
         firstDayOfWeek = Calendar.MONDAY
         set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
@@ -86,16 +90,47 @@ fun calculateWeeklyWorkedMinutes(logs: List<StampEntity>, currentSessionMinutes:
 
     var totalLogMinutes = 0
     var lastInTs: Long? = null
+    var breakStartTs: Long? = null
+    var sessionBreakMs = 0L
 
     for (log in weekLogs) {
-        if (log.actionType.contains("SISÄÄN", ignoreCase = true)) {
-            lastInTs = log.timestamp
-        } else if (log.actionType.contains("ULOS", ignoreCase = true) && lastInTs != null) {
-            val diffMs = log.timestamp - lastInTs
-            if (diffMs > 0) {
-                totalLogMinutes += (diffMs / (60 * 1000L)).toInt()
+        when {
+            log.actionType.contains("SISÄÄN", ignoreCase = true) -> {
+                lastInTs = log.timestamp
+                breakStartTs = null
+                sessionBreakMs = 0L
             }
-            lastInTs = null
+
+            log.actionType.contains("TAUOLLE", ignoreCase = true) -> {
+                breakStartTs = log.timestamp
+            }
+
+            log.actionType.contains("TAUOLTA", ignoreCase = true) -> {
+                breakStartTs?.let { start ->
+                    val breakMs = log.timestamp - start
+                    if (breakMs > 0) sessionBreakMs += breakMs
+                }
+                breakStartTs = null
+            }
+
+            log.actionType.contains("ULOS", ignoreCase = true) && lastInTs != null -> {
+                val diffMs = log.timestamp - lastInTs
+                if (diffMs > 0) {
+                    // A break still running at clock-out counts up to that moment
+                    breakStartTs?.let { start ->
+                        val breakMs = log.timestamp - start
+                        if (breakMs > 0) sessionBreakMs += breakMs
+                    }
+                    val rawMins = (diffMs / (60 * 1000L)).toInt()
+                    val breakMins = (sessionBreakMs / (60 * 1000L)).toInt()
+                    // Tuntivelho always charges at least the minimum break
+                    val deduction = maxOf(lunchBreakMinutes, breakMins)
+                    totalLogMinutes += (rawMins - deduction).coerceAtLeast(0)
+                }
+                lastInTs = null
+                breakStartTs = null
+                sessionBreakMs = 0L
+            }
         }
     }
 
@@ -113,16 +148,14 @@ fun HomeScreen(
     val balanceStr by viewModel.currentBalanceStr.collectAsState()
     val logs by viewModel.logs.collectAsState()
 
-    val currentSessionMinutes = if (settings.isClockedIn && settings.clockInTimestamp > 0L) {
-        ((System.currentTimeMillis() - settings.clockInTimestamp) / 60000L).toInt()
-    } else 0
+    val currentSessionMinutes = settings.workedMinutesSinceClockIn(System.currentTimeMillis())
 
     val isWeekly = settings.targetMode == "WEEKLY"
     val targetGoalHours = if (isWeekly) settings.targetHoursWeekly else settings.targetHoursDaily
     val targetMinsTotal = (targetGoalHours * 60).toInt()
 
     val workedMinsTotal = if (isWeekly) {
-        calculateWeeklyWorkedMinutes(logs, currentSessionMinutes)
+        calculateWeeklyWorkedMinutes(logs, currentSessionMinutes, settings.lunchBreakMinutes)
     } else {
         currentSessionMinutes
     }
@@ -404,6 +437,21 @@ fun HomeScreen(
                             text = if (settings.isOnBreak) "TAUOLTA TAKAISIN" else "TAUOLLE",
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
+                        )
+                    }
+
+                    if (settings.isClockedIn) {
+                        val nowMs = System.currentTimeMillis()
+                        val deduction = settings.breakDeductionMinutes(nowMs)
+                        val actualBreak = deduction - settings.lunchBreakMinutes
+                        Text(
+                            text = if (deduction > settings.lunchBreakMinutes) {
+                                "Tauko $deduction min — työpäivä venyy $actualBreak min minimitaukoa pidemmäksi."
+                            } else {
+                                "Taukovähennys ${settings.lunchBreakMinutes} min (minimi peritään, vaikka tauko jäisi lyhyemmäksi)."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
