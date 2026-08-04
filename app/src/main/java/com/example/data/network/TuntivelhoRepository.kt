@@ -237,24 +237,16 @@ class TuntivelhoRepository(
                 leimausaikaSec = now / 1000
             )
 
-            Log.d("Tuntivelho", "Sending punch ($type) to $targetUrl with talaatuid=$talaatuid, tyopisteid=$tyopisteid")
-            Log.d("Tuntivelho", "Punch Payload: $punchPayload")
-
-            val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+            if (com.example.BuildConfig.DEBUG) {
+                Log.d("Tuntivelho", "Sending punch ($type) to $targetUrl with talaatuid=$talaatuid, tyopisteid=$tyopisteid")
+            }
 
             try {
-                val request = Request.Builder()
-                    .url(targetUrl)
-                    .post(punchPayload.toRequestBody(jsonMediaType))
-                    .addHeaders(token)
-                    .build()
+                val (code, responseBody) = executeGraphQLCall(targetUrl, token, punchPayload)
 
-                val response = client.newCall(request).execute()
-                val code = response.code
-                val responseBody = response.body?.string() ?: ""
-                response.close()
-
-                Log.d("Tuntivelho", "Punch Response ($code): $responseBody")
+                if (com.example.BuildConfig.DEBUG) {
+                    Log.d("Tuntivelho", "Punch Response ($code)")
+                }
 
                 if (code in 200..303) {
                     val gqlResp = parseGraphQLResponse(responseBody)
@@ -407,23 +399,30 @@ class TuntivelhoRepository(
         return@withContext StampResult.Error(finalError)
     }
 
+    private fun executeGraphQLCall(targetUrl: String, token: String, payload: String): Pair<Int, String> {
+        val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+        val request = Request.Builder()
+            .url(targetUrl)
+            .post(payload.toRequestBody(jsonMediaType))
+            .addHeaders(token)
+            .build()
+
+        val response = client.newCall(request).execute()
+        val code = response.code
+        val body = response.body?.string() ?: ""
+        response.close()
+        return Pair(code, body)
+    }
+
     private fun fetchKellokorttiFullResult(targetUrl: String, token: String): StampResult {
         val payload = GraphQLQueries.buildKellokorttiFullPayload()
-        val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
         return try {
-            val request = Request.Builder()
-                .url(targetUrl)
-                .post(payload.toRequestBody(jsonMediaType))
-                .addHeaders(token)
-                .build()
+            val (code, body) = executeGraphQLCall(targetUrl, token, payload)
 
-            val response = client.newCall(request).execute()
-            val code = response.code
-            val body = response.body?.string() ?: ""
-            response.close()
-
-            Log.d("Tuntivelho", "Kellokortti full response ($code): $body")
+            if (com.example.BuildConfig.DEBUG) {
+                Log.d("Tuntivelho", "Kellokortti full response ($code)")
+            }
             val newEntry = "HTTP $code\nURL: $targetUrl\nResponse Body:\n$body"
             if (rawApiResponse.value.startsWith("Ei vielä") || code in 200..303) {
                 rawApiResponse.value = newEntry
@@ -443,7 +442,9 @@ class TuntivelhoRepository(
                 val prevStamp = kellokortti?.previousstamp
                 if (prevStamp != null && prevStamp.suuntaid != null) {
                     val helsinkiTz = java.util.TimeZone.getTimeZone("Europe/Helsinki")
-                    Log.d("Tuntivelho", "Kellokortti status update: suuntaid=${prevStamp.suuntaid}, aika=${prevStamp.aika}")
+                    if (com.example.BuildConfig.DEBUG) {
+                        Log.d("Tuntivelho", "Kellokortti status update: suuntaid=${prevStamp.suuntaid}, aika=${prevStamp.aika}")
+                    }
                     if (prevStamp.suuntaid == 0) { // 0 = Sisään (IN) in Tuntivelho API
                         var actualTs = System.currentTimeMillis()
                         val serverAikaTs = prevStamp.aika
@@ -481,21 +482,13 @@ class TuntivelhoRepository(
 
     private fun fetchKellokorttiDefaults(targetUrl: String, token: String): com.example.data.network.SelectionDefaults? {
         val payload = GraphQLQueries.buildKellokorttiDefaultsPayload()
-        val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
         return try {
-            val request = Request.Builder()
-                .url(targetUrl)
-                .post(payload.toRequestBody(jsonMediaType))
-                .addHeaders(token)
-                .build()
+            val (code, body) = executeGraphQLCall(targetUrl, token, payload)
 
-            val response = client.newCall(request).execute()
-            val code = response.code
-            val body = response.body?.string() ?: ""
-            response.close()
-
-            Log.d("Tuntivelho", "Defaults response ($code): $body")
+            if (com.example.BuildConfig.DEBUG) {
+                Log.d("Tuntivelho", "Defaults response ($code)")
+            }
 
             if (code in 200..303) {
                 val gqlResp = parseGraphQLResponse(body)
@@ -515,21 +508,13 @@ class TuntivelhoRepository(
 
     private fun fetchBalance(targetUrl: String, token: String): Long? {
         val payload = GraphQLQueries.buildBalancePayload()
-        val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
         return try {
-            val request = Request.Builder()
-                .url(targetUrl)
-                .post(payload.toRequestBody(jsonMediaType))
-                .addHeaders(token)
-                .build()
+            val (code, body) = executeGraphQLCall(targetUrl, token, payload)
 
-            val response = client.newCall(request).execute()
-            val code = response.code
-            val body = response.body?.string() ?: ""
-            response.close()
-
-            Log.d("Tuntivelho", "Balance response ($code): $body")
+            if (com.example.BuildConfig.DEBUG) {
+                Log.d("Tuntivelho", "Balance response ($code)")
+            }
 
             if (code in 200..303) {
                 val gqlResp = parseGraphQLResponse(body)

@@ -48,7 +48,11 @@ data class AppSettings(
         get() = (workdayHours * 60) + workdayMinutes + lunchBreakMinutes
 
     val currentTargetMinutesNeeded: Int
-        get() = if (targetMode == "WEEKLY") (targetHoursWeekly * 60).toInt() else (targetHoursDaily * 60).toInt()
+        get() = if (targetMode == "WEEKLY") {
+            (targetHoursWeekly * 60).toInt() + (5 * lunchBreakMinutes)
+        } else {
+            (targetHoursDaily * 60).toInt() + lunchBreakMinutes
+        }
 }
 
 class UserPreferencesRepository(context: Context) {

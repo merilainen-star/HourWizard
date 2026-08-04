@@ -69,7 +69,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-fun calculateWeeklyWorkedMinutes(logs: List<StampEntity>, currentSessionMinutes: Int): Int {
+fun calculateWeeklyWorkedMinutes(logs: List<StampEntity>, currentSessionMinutes: Int, lunchBreakMinutes: Int = 30): Int {
     val calendar = Calendar.getInstance(TimeZone.getTimeZone("Europe/Helsinki")).apply {
         firstDayOfWeek = Calendar.MONDAY
         set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
@@ -91,7 +91,9 @@ fun calculateWeeklyWorkedMinutes(logs: List<StampEntity>, currentSessionMinutes:
         } else if (log.actionType.contains("ULOS", ignoreCase = true) && lastInTs != null) {
             val diffMs = log.timestamp - lastInTs
             if (diffMs > 0) {
-                totalLogMinutes += (diffMs / (60 * 1000L)).toInt()
+                val rawMins = (diffMs / (60 * 1000L)).toInt()
+                val netMins = if (rawMins >= lunchBreakMinutes) rawMins - lunchBreakMinutes else rawMins
+                totalLogMinutes += netMins
             }
             lastInTs = null
         }
@@ -111,16 +113,20 @@ fun HomeScreen(
     val balanceStr by viewModel.currentBalanceStr.collectAsState()
     val logs by viewModel.logs.collectAsState()
 
-    val currentSessionMinutes = if (settings.isClockedIn && settings.clockInTimestamp > 0L) {
+    val rawSessionMinutes = if (settings.isClockedIn && settings.clockInTimestamp > 0L) {
         ((System.currentTimeMillis() - settings.clockInTimestamp) / 60000L).toInt()
     } else 0
+
+    val currentSessionMinutes = if (rawSessionMinutes >= settings.lunchBreakMinutes) {
+        rawSessionMinutes - settings.lunchBreakMinutes
+    } else rawSessionMinutes
 
     val isWeekly = settings.targetMode == "WEEKLY"
     val targetGoalHours = if (isWeekly) settings.targetHoursWeekly else settings.targetHoursDaily
     val targetMinsTotal = (targetGoalHours * 60).toInt()
 
     val workedMinsTotal = if (isWeekly) {
-        calculateWeeklyWorkedMinutes(logs, currentSessionMinutes)
+        calculateWeeklyWorkedMinutes(logs, currentSessionMinutes, settings.lunchBreakMinutes)
     } else {
         currentSessionMinutes
     }
