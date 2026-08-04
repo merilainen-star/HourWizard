@@ -162,12 +162,24 @@ class TuntivelhoRepository(
 
     suspend fun clockOut(): StampResult = executePunch("out")
 
+    suspend fun breakStart(): StampResult = executePunch("break_start")
+
+    suspend fun breakEnd(): StampResult = executePunch("break_end")
+
     private suspend fun executePunch(type: String): StampResult = withContext(Dispatchers.IO) {
         val settings = prefsRepository.settings.value
         val password = prefsRepository.getPassword()
         val now = System.currentTimeMillis()
         val isClockIn = (type == "in")
-        val actionTitle = if (isClockIn) "SISÄÄN" else "ULOS"
+        val isClockOut = (type == "out")
+        val isBreakStart = (type == "break_start")
+        val isBreakEnd = (type == "break_end")
+        val actionTitle = when (type) {
+            "in" -> "SISÄÄN"
+            "break_start" -> "TAUOLLE"
+            "break_end" -> "TAUOLTA"
+            else -> "ULOS"
+        }
         val helsinkiTz = TimeZone.getTimeZone("Europe/Helsinki")
         val utcTz = TimeZone.getTimeZone("UTC")
         val timeFormat = SimpleDateFormat("HH.mm", Locale.getDefault()).apply { timeZone = helsinkiTz }
@@ -179,16 +191,20 @@ class TuntivelhoRepository(
         val fullTimeStr = fullTimeFormat.format(Date(now))
 
         if (settings.isDemoMode || settings.username.isBlank()) {
-            val demoMsg = if (isClockIn) {
-                "Sisäänleimaus tehty klo $timeStr (Demotila)."
-            } else {
-                val balanceStr = calculateBalance(settings.clockInTimestamp, now, settings.totalWorkdayMinutesNeeded)
-                "Ulosleimaus tehty klo $timeStr (Demotila). Saldo: $balanceStr"
+            val demoMsg = when {
+                isClockIn -> "Sisäänleimaus tehty klo $timeStr (Demotila)."
+                isBreakStart -> "Tauolle klo $timeStr (Demotila)."
+                isBreakEnd -> "Tauolta takaisin klo $timeStr (Demotila)."
+                else -> {
+                    val balanceStr = calculateBalance(settings.clockInTimestamp, now, settings.totalWorkdayMinutesNeeded)
+                    "Ulosleimaus tehty klo $timeStr (Demotila). Saldo: $balanceStr"
+                }
             }
-            if (isClockIn) {
-                prefsRepository.updateClockInStatus(isClockedIn = true, clockInTs = now)
-            } else {
-                prefsRepository.updateClockInStatus(isClockedIn = false, clockInTs = 0L)
+            when {
+                isClockIn -> prefsRepository.updateClockInStatus(isClockedIn = true, clockInTs = now)
+                isClockOut -> prefsRepository.updateClockInStatus(isClockedIn = false, clockInTs = 0L)
+                // Break stamps keep the running clock-in session intact
+                else -> prefsRepository.updateBreakStatus(isOnBreak = isBreakStart)
             }
             stampDao.insertLog(
                 StampEntity(
@@ -237,16 +253,24 @@ class TuntivelhoRepository(
                 leimausaikaSec = now / 1000
             )
 
-            if (com.example.BuildConfig.DEBUG) {
-                Log.d("Tuntivelho", "Sending punch ($type) to $targetUrl with talaatuid=$talaatuid, tyopisteid=$tyopisteid")
-            }
+            Log.d("Tuntivelho", "Sending punch ($type) to $targetUrl with talaatuid=$talaatuid, tyopisteid=$tyopisteid")
+            Log.d("Tuntivelho", "Punch Payload: $punchPayload")
+
+            val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
             try {
-                val (code, responseBody) = executeGraphQLCall(targetUrl, token, punchPayload)
+                val request = Request.Builder()
+                    .url(targetUrl)
+                    .post(punchPayload.toRequestBody(jsonMediaType))
+                    .addHeaders(token)
+                    .build()
 
-                if (com.example.BuildConfig.DEBUG) {
-                    Log.d("Tuntivelho", "Punch Response ($code)")
-                }
+                val response = client.newCall(request).execute()
+                val code = response.code
+                val responseBody = response.body?.string() ?: ""
+                response.close()
+
+                Log.d("Tuntivelho", "Punch Response ($code): $responseBody")
 
                 if (code in 200..303) {
                     val gqlResp = parseGraphQLResponse(responseBody)
@@ -299,21 +323,23 @@ class TuntivelhoRepository(
                     if (taseSeconds != null) {
                         balanceStr = formatTaseSeconds(taseSeconds)
                         prefsRepository.saveServerBalance(balanceStr)
-                    } else if (!isClockIn) {
+                    } else if (isClockOut) {
                         balanceStr = calculateBalance(settings.clockInTimestamp, actualTimestamp, settings.totalWorkdayMinutesNeeded)
                         prefsRepository.saveServerBalance(balanceStr)
                     }
 
-                    val successMsg = if (isClockIn) {
-                        "Sisäänleimaus klo $displayTime kirjattu Tuntivelhoon."
-                    } else {
-                        "Ulosleimaus klo $displayTime kirjattu Tuntivelhoon." + if (balanceStr.isNotBlank()) " Saldo: $balanceStr" else ""
+                    val successMsg = when {
+                        isClockIn -> "Sisäänleimaus klo $displayTime kirjattu Tuntivelhoon."
+                        isBreakStart -> "Tauolle klo $displayTime kirjattu Tuntivelhoon."
+                        isBreakEnd -> "Tauolta takaisin klo $displayTime kirjattu Tuntivelhoon."
+                        else -> "Ulosleimaus klo $displayTime kirjattu Tuntivelhoon." + if (balanceStr.isNotBlank()) " Saldo: $balanceStr" else ""
                     }
 
-                    if (isClockIn) {
-                        prefsRepository.updateClockInStatus(isClockedIn = true, clockInTs = actualTimestamp)
-                    } else {
-                        prefsRepository.updateClockInStatus(isClockedIn = false, clockInTs = 0L)
+                    when {
+                        isClockIn -> prefsRepository.updateClockInStatus(isClockedIn = true, clockInTs = actualTimestamp)
+                        isClockOut -> prefsRepository.updateClockInStatus(isClockedIn = false, clockInTs = 0L)
+                        // Break stamps keep the running clock-in session intact
+                        else -> prefsRepository.updateBreakStatus(isOnBreak = isBreakStart)
                     }
 
                     recordLog(actualTimestamp, actualFullTimeStr, actionTitle, isSuccess = true, message = successMsg, balance = balanceStr)
@@ -399,30 +425,23 @@ class TuntivelhoRepository(
         return@withContext StampResult.Error(finalError)
     }
 
-    private fun executeGraphQLCall(targetUrl: String, token: String, payload: String): Pair<Int, String> {
-        val jsonMediaType = "application/json; charset=utf-8".toMediaType()
-        val request = Request.Builder()
-            .url(targetUrl)
-            .post(payload.toRequestBody(jsonMediaType))
-            .addHeaders(token)
-            .build()
-
-        val response = client.newCall(request).execute()
-        val code = response.code
-        val body = response.body?.string() ?: ""
-        response.close()
-        return Pair(code, body)
-    }
-
     private fun fetchKellokorttiFullResult(targetUrl: String, token: String): StampResult {
         val payload = GraphQLQueries.buildKellokorttiFullPayload()
+        val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
         return try {
-            val (code, body) = executeGraphQLCall(targetUrl, token, payload)
+            val request = Request.Builder()
+                .url(targetUrl)
+                .post(payload.toRequestBody(jsonMediaType))
+                .addHeaders(token)
+                .build()
 
-            if (com.example.BuildConfig.DEBUG) {
-                Log.d("Tuntivelho", "Kellokortti full response ($code)")
-            }
+            val response = client.newCall(request).execute()
+            val code = response.code
+            val body = response.body?.string() ?: ""
+            response.close()
+
+            Log.d("Tuntivelho", "Kellokortti full response ($code): $body")
             val newEntry = "HTTP $code\nURL: $targetUrl\nResponse Body:\n$body"
             if (rawApiResponse.value.startsWith("Ei vielä") || code in 200..303) {
                 rawApiResponse.value = newEntry
@@ -442,9 +461,7 @@ class TuntivelhoRepository(
                 val prevStamp = kellokortti?.previousstamp
                 if (prevStamp != null && prevStamp.suuntaid != null) {
                     val helsinkiTz = java.util.TimeZone.getTimeZone("Europe/Helsinki")
-                    if (com.example.BuildConfig.DEBUG) {
-                        Log.d("Tuntivelho", "Kellokortti status update: suuntaid=${prevStamp.suuntaid}, aika=${prevStamp.aika}")
-                    }
+                    Log.d("Tuntivelho", "Kellokortti status update: suuntaid=${prevStamp.suuntaid}, aika=${prevStamp.aika}")
                     if (prevStamp.suuntaid == 0) { // 0 = Sisään (IN) in Tuntivelho API
                         var actualTs = System.currentTimeMillis()
                         val serverAikaTs = prevStamp.aika
@@ -482,13 +499,21 @@ class TuntivelhoRepository(
 
     private fun fetchKellokorttiDefaults(targetUrl: String, token: String): com.example.data.network.SelectionDefaults? {
         val payload = GraphQLQueries.buildKellokorttiDefaultsPayload()
+        val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
         return try {
-            val (code, body) = executeGraphQLCall(targetUrl, token, payload)
+            val request = Request.Builder()
+                .url(targetUrl)
+                .post(payload.toRequestBody(jsonMediaType))
+                .addHeaders(token)
+                .build()
 
-            if (com.example.BuildConfig.DEBUG) {
-                Log.d("Tuntivelho", "Defaults response ($code)")
-            }
+            val response = client.newCall(request).execute()
+            val code = response.code
+            val body = response.body?.string() ?: ""
+            response.close()
+
+            Log.d("Tuntivelho", "Defaults response ($code): $body")
 
             if (code in 200..303) {
                 val gqlResp = parseGraphQLResponse(body)
@@ -508,13 +533,21 @@ class TuntivelhoRepository(
 
     private fun fetchBalance(targetUrl: String, token: String): Long? {
         val payload = GraphQLQueries.buildBalancePayload()
+        val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
         return try {
-            val (code, body) = executeGraphQLCall(targetUrl, token, payload)
+            val request = Request.Builder()
+                .url(targetUrl)
+                .post(payload.toRequestBody(jsonMediaType))
+                .addHeaders(token)
+                .build()
 
-            if (com.example.BuildConfig.DEBUG) {
-                Log.d("Tuntivelho", "Balance response ($code)")
-            }
+            val response = client.newCall(request).execute()
+            val code = response.code
+            val body = response.body?.string() ?: ""
+            response.close()
+
+            Log.d("Tuntivelho", "Balance response ($code): $body")
 
             if (code in 200..303) {
                 val gqlResp = parseGraphQLResponse(body)

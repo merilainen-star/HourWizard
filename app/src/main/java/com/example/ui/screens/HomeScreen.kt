@@ -21,9 +21,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.FreeBreakfast
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Vibration
@@ -69,7 +71,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-fun calculateWeeklyWorkedMinutes(logs: List<StampEntity>, currentSessionMinutes: Int, lunchBreakMinutes: Int = 30): Int {
+fun calculateWeeklyWorkedMinutes(logs: List<StampEntity>, currentSessionMinutes: Int): Int {
     val calendar = Calendar.getInstance(TimeZone.getTimeZone("Europe/Helsinki")).apply {
         firstDayOfWeek = Calendar.MONDAY
         set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
@@ -91,9 +93,7 @@ fun calculateWeeklyWorkedMinutes(logs: List<StampEntity>, currentSessionMinutes:
         } else if (log.actionType.contains("ULOS", ignoreCase = true) && lastInTs != null) {
             val diffMs = log.timestamp - lastInTs
             if (diffMs > 0) {
-                val rawMins = (diffMs / (60 * 1000L)).toInt()
-                val netMins = if (rawMins >= lunchBreakMinutes) rawMins - lunchBreakMinutes else rawMins
-                totalLogMinutes += netMins
+                totalLogMinutes += (diffMs / (60 * 1000L)).toInt()
             }
             lastInTs = null
         }
@@ -113,20 +113,16 @@ fun HomeScreen(
     val balanceStr by viewModel.currentBalanceStr.collectAsState()
     val logs by viewModel.logs.collectAsState()
 
-    val rawSessionMinutes = if (settings.isClockedIn && settings.clockInTimestamp > 0L) {
+    val currentSessionMinutes = if (settings.isClockedIn && settings.clockInTimestamp > 0L) {
         ((System.currentTimeMillis() - settings.clockInTimestamp) / 60000L).toInt()
     } else 0
-
-    val currentSessionMinutes = if (rawSessionMinutes >= settings.lunchBreakMinutes) {
-        rawSessionMinutes - settings.lunchBreakMinutes
-    } else rawSessionMinutes
 
     val isWeekly = settings.targetMode == "WEEKLY"
     val targetGoalHours = if (isWeekly) settings.targetHoursWeekly else settings.targetHoursDaily
     val targetMinsTotal = (targetGoalHours * 60).toInt()
 
     val workedMinsTotal = if (isWeekly) {
-        calculateWeeklyWorkedMinutes(logs, currentSessionMinutes, settings.lunchBreakMinutes)
+        calculateWeeklyWorkedMinutes(logs, currentSessionMinutes)
     } else {
         currentSessionMinutes
     }
@@ -187,7 +183,11 @@ fun HomeScreen(
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = if (settings.isClockedIn) Color(0xFF34D399) else Color(0xFFFFB74D)
+                            color = when {
+                                settings.isOnBreak -> Color(0xFF38BDF8)
+                                settings.isClockedIn -> Color(0xFF34D399)
+                                else -> Color(0xFFFFB74D)
+                            }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -201,7 +201,11 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (settings.isClockedIn) "SISÄÄNLEIMATTU" else "EI AKTIIVISTA LEIMAUSTA",
+                                    text = when {
+                                        settings.isOnBreak -> "TAUOLLA"
+                                        settings.isClockedIn -> "SISÄÄNLEIMATTU"
+                                        else -> "EI AKTIIVISTA LEIMAUSTA"
+                                    },
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.Black
@@ -374,6 +378,33 @@ fun HomeScreen(
                                 fontSize = 16.sp
                             )
                         }
+                    }
+
+                    // Break stamp — only meaningful while a session is running
+                    Button(
+                        onClick = {
+                            if (settings.isOnBreak) viewModel.endBreak() else viewModel.startBreak()
+                        },
+                        enabled = settings.isClockedIn,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .testTag("break_button"),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (settings.isOnBreak) Color(0xFF0284C7) else Color(0xFF7C3AED)
+                        )
+                    ) {
+                        Icon(
+                            imageVector = if (settings.isOnBreak) Icons.Default.PlayArrow else Icons.Default.FreeBreakfast,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (settings.isOnBreak) "TAUOLTA TAKAISIN" else "TAUOLLE",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
                     }
                 }
             }

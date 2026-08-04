@@ -115,7 +115,12 @@ object GraphQLQueries {
         tyopisteid: Int,
         leimausaikaSec: Long = System.currentTimeMillis() / 1000
     ): String {
-        val tapahtuma = if (type == "in") "sisaan" else "ulos"
+        val tapahtuma = when (type) {
+            "in" -> "sisaan"
+            "break_start" -> "tauolle"
+            "break_end" -> "tauolta"
+            else -> "ulos"
+        }
         return """
             [
               {

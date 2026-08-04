@@ -245,6 +245,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun startBreak() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            val result = repository.breakStart()
+            _isLoading.value = false
+
+            when (result) {
+                is StampResult.Success -> {
+                    _uiMessage.value = UiMessage(result.message, isError = false)
+                }
+                is StampResult.Error -> {
+                    handleGlobalError(result.errorMessage)
+                }
+            }
+        }
+    }
+
+    fun endBreak() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            val result = repository.breakEnd()
+            _isLoading.value = false
+
+            when (result) {
+                is StampResult.Success -> {
+                    _uiMessage.value = UiMessage(result.message, isError = false)
+                }
+                is StampResult.Error -> {
+                    handleGlobalError(result.errorMessage)
+                }
+            }
+        }
+    }
+
     fun triggerTestMorningNotification() {
         notificationHelper.showMorningNotification()
         _uiMessage.value = UiMessage("Aamumuistutusilmoitus lähetetty laitteelle!", isError = false)

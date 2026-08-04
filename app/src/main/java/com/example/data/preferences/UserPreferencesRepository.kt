@@ -21,6 +21,7 @@ data class AppSettings(
     val isDemoMode: Boolean = false,
     val isClockedIn: Boolean = false,
     val clockInTimestamp: Long = 0L,
+    val isOnBreak: Boolean = false,
     val lastServerBalance: String = "",
     val enabledDaysString: String = "1,2,3,4,5",
     val isVacationEnabled: Boolean = false,
@@ -48,11 +49,7 @@ data class AppSettings(
         get() = (workdayHours * 60) + workdayMinutes + lunchBreakMinutes
 
     val currentTargetMinutesNeeded: Int
-        get() = if (targetMode == "WEEKLY") {
-            (targetHoursWeekly * 60).toInt() + (5 * lunchBreakMinutes)
-        } else {
-            (targetHoursDaily * 60).toInt() + lunchBreakMinutes
-        }
+        get() = if (targetMode == "WEEKLY") (targetHoursWeekly * 60).toInt() else (targetHoursDaily * 60).toInt()
 }
 
 class UserPreferencesRepository(context: Context) {
@@ -77,6 +74,7 @@ class UserPreferencesRepository(context: Context) {
         val isDemo = prefs.getBoolean(KEY_IS_DEMO, username.isBlank())
         val isClockedIn = prefs.getBoolean(KEY_IS_CLOCKED_IN, false)
         val clockInTs = prefs.getLong(KEY_CLOCK_IN_TS, 0L)
+        val isOnBreak = prefs.getBoolean(KEY_IS_ON_BREAK, false)
         val lastBalance = prefs.getString(KEY_SERVER_BALANCE, "") ?: ""
         val enabledDays = prefs.getString(KEY_ENABLED_DAYS, "1,2,3,4,5") ?: "1,2,3,4,5"
         val isVacation = prefs.getBoolean(KEY_IS_VACATION, false)
@@ -113,6 +111,7 @@ class UserPreferencesRepository(context: Context) {
             isDemoMode = isDemo,
             isClockedIn = isClockedIn,
             clockInTimestamp = clockInTs,
+            isOnBreak = isOnBreak,
             lastServerBalance = lastBalance,
             enabledDaysString = enabledDays,
             isVacationEnabled = isVacation,
@@ -268,6 +267,16 @@ class UserPreferencesRepository(context: Context) {
         prefs.edit()
             .putBoolean(KEY_IS_CLOCKED_IN, isClockedIn)
             .putLong(KEY_CLOCK_IN_TS, clockInTs)
+            // A fresh in/out stamp always ends any running break
+            .putBoolean(KEY_IS_ON_BREAK, false)
+            .apply()
+
+        _settings.value = loadSettings()
+    }
+
+    fun updateBreakStatus(isOnBreak: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_IS_ON_BREAK, isOnBreak)
             .apply()
 
         _settings.value = loadSettings()
@@ -333,6 +342,7 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_IS_DEMO = "is_demo"
         private const val KEY_IS_CLOCKED_IN = "is_clocked_in"
         private const val KEY_CLOCK_IN_TS = "clock_in_ts"
+        private const val KEY_IS_ON_BREAK = "is_on_break"
         private const val KEY_SERVER_BALANCE = "server_balance"
         private const val KEY_TALAATUID = "selection_talaatuid"
         private const val KEY_TYOPISTEID = "selection_tyopisteid"
