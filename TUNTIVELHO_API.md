@@ -1,9 +1,9 @@
 # Tuntivelho API — Source of Truth
 
-**Versio:** 2.0 (korjattu — johdettu suoraan `tuntiwelho_api.py`-lähdekoodista)
+**Versio:** 2.0 (korjattu — johdettu suoraan `numbawang_api.py`-lähdekoodista)
 **Päivitetty:** 2026-07-30
 **Status:** Tuotanto-dokumentaatio. Kaikki tässä dokumentissa oleva GraphQL-sisältö on
-kopioitu **sanasta sanaan** toimivasta Python-skriptistä (`tuntiwelho_api.py`), joka on
+kopioitu **sanasta sanaan** toimivasta Python-skriptistä (`numbawang_api.py`), joka on
 todistetusti onnistuneesti leimannut sisään/ulos tuotannossa. Mitään ei ole arvattu.
 
 > ⚠️ **Versio 1.0 tästä dokumentista oli virheellinen.** Se sisälsi keksityn
@@ -37,7 +37,7 @@ DEFAULT_API_URLS = [
 
 - Backend siirtyi `/tvv-mobile/...` → `/mobiili/...` maaliskuussa 2026.
 - **`/mobiili/...` kokeillaan ensin**, `/tvv-mobile/...` on fallback.
-- Ympäristömuuttuja `TW_API_URL` voi asettaa lisä-endpointin, joka kokeillaan **ensimmäisenä**
+- Ympäristömuuttuja `NW_API_URL` voi asettaa lisä-endpointin, joka kokeillaan **ensimmäisenä**
   (lisätään listan alkuun, duplikaatit poistetaan).
 - **Ei mitään muuta osoitetta kokeilla.** Ei `/api/graphql`, ei `/login`, ei `/leimaus`,
   ei `www.tuntivelho.fi/mitään`. Näitä ei ole koskaan ollut Python-koodissa — ne olivat
@@ -459,14 +459,14 @@ Nämä olivat v1.0-dokumentin keksintöjä eivätkä perustu mihinkään toimiva
 
 ## 📚 Lähde
 
-Tämä dokumentti on suoraan johdettu tiedostosta [`tuntiwelho_api.py`](tuntiwelho_api.py),
+Tämä dokumentti on suoraan johdettu tiedostosta [`numbawang_api.py`](numbawang_api.py),
 joka on ainoa todistetusti toimiva referenssi. Kun Python-koodia päivitetään, päivitä
 tämä tiedosto samalla — älä koskaan lisää tähän mitään mitä ei ole ensin varmistettu
 toimivasta koodista.
 
 ## 📝 Muutosloki
 
-- **2.0** (2026-07-30): Täydellinen uudelleenkirjoitus suoraan `tuntiwelho_api.py`:stä.
+- **2.0** (2026-07-30): Täydellinen uudelleenkirjoitus suoraan `numbawang_api.py`:stä.
   Korjattu: mutaation nimi (`leimaTallenna`, ei `stamp`), login-kentät (`kayttajatunnus`/`salasana`),
   array-wrapped payload, `Origin`-header, pakollinen kellokortti-defaults-vaihe, poistettu
   keksityt REST-fallbackit, lisätty tarkka fallback/retry-logiikka HTTP-koodeittain.
