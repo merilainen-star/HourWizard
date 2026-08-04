@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import com.aistudio.tuntivelho.leimaus.data.db.StampEntity
 import com.aistudio.tuntivelho.leimaus.data.preferences.AppSettings
 import com.aistudio.tuntivelho.leimaus.ui.MainViewModel
+import com.aistudio.tuntivelho.leimaus.ui.components.WeeklySummaryCard
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -342,121 +343,10 @@ fun HomeScreen(
             }
         }
 
-        // Action Buttons Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Text(
-                    text = "Pikaleimaukset",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                if (isLoading) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Käsitellään leimauspyyntöä...", style = MaterialTheme.typography.bodyMedium)
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Button(
-                            onClick = { viewModel.clockIn() },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp)
-                                .testTag("clock_in_button"),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF059669)
-                            )
-                        ) {
-                            Icon(Icons.Default.Login, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "SISÄÄN",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                        }
-
-                        Button(
-                            onClick = { viewModel.clockOut() },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp)
-                                .testTag("clock_out_button"),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFEA580C)
-                            )
-                        ) {
-                            Icon(Icons.Default.Logout, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "ULOS",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                        }
-                    }
-
-                    // Break stamp — only meaningful while a session is running
-                    Button(
-                        onClick = {
-                            if (settings.isOnBreak) viewModel.endBreak() else viewModel.startBreak()
-                        },
-                        enabled = settings.isClockedIn,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .testTag("break_button"),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (settings.isOnBreak) Color(0xFF0284C7) else Color(0xFF7C3AED)
-                        )
-                    ) {
-                        Icon(
-                            imageVector = if (settings.isOnBreak) Icons.Default.PlayArrow else Icons.Default.FreeBreakfast,
-                            contentDescription = null
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (settings.isOnBreak) "TAUOLTA TAKAISIN" else "TAUOLLE",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        )
-                    }
-
-                    if (settings.isClockedIn) {
-                        val nowMs = System.currentTimeMillis()
-                        val deduction = settings.breakDeductionMinutes(nowMs)
-                        val actualBreak = deduction - settings.lunchBreakMinutes
-                        Text(
-                            text = if (deduction > settings.lunchBreakMinutes) {
-                                "Tauko $deduction min — työpäivä venyy $actualBreak min minimitaukoa pidemmäksi."
-                            } else {
-                                "Taukovähennys ${settings.lunchBreakMinutes} min (minimi peritään, vaikka tauko jäisi lyhyemmäksi)."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
+        WeeklySummaryCard(
+            settings = settings,
+            logs = logs
+        )
 
         // Target Hours & Progress Bar Card
         Card(

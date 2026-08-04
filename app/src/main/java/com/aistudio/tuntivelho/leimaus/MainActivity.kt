@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -26,8 +27,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -48,6 +47,7 @@ import com.aistudio.tuntivelho.leimaus.ui.MainViewModel
 import com.aistudio.tuntivelho.leimaus.ui.screens.HistoryScreen
 import com.aistudio.tuntivelho.leimaus.ui.screens.HomeScreen
 import com.aistudio.tuntivelho.leimaus.ui.screens.SettingsScreen
+import com.aistudio.tuntivelho.leimaus.ui.components.QuickPunchBottomBar
 import com.aistudio.tuntivelho.leimaus.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -143,10 +143,32 @@ class MainActivity : ComponentActivity() {
                                     style = MaterialTheme.typography.titleLarge
                                 )
                             },
+                            navigationIcon = {
+                                if (selectedTab != 0) {
+                                    IconButton(onClick = { selectedTab = 0 }) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = "Takaisin"
+                                        )
+                                    }
+                                }
+                            },
                             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                                 containerColor = MaterialTheme.colorScheme.surface
                             ),
                             actions = {
+                                IconButton(onClick = { selectedTab = 2 }) {
+                                    Icon(
+                                        imageVector = Icons.Default.History,
+                                        contentDescription = "Historia"
+                                    )
+                                }
+                                IconButton(onClick = { selectedTab = 1 }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = "Asetukset"
+                                    )
+                                }
                                 IconButton(onClick = { viewModel.triggerTestMorningNotification() }) {
                                     Icon(
                                         imageVector = Icons.Default.Notifications,
@@ -158,30 +180,7 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     bottomBar = {
-                        NavigationBar(
-                            modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
-                        ) {
-                            NavigationBarItem(
-                                selected = selectedTab == 0,
-                                onClick = { selectedTab = 0 },
-                                icon = { Icon(Icons.Default.Home, contentDescription = "Etusivu") },
-                                label = { Text("Etusivu") }
-                            )
-
-                            NavigationBarItem(
-                                selected = selectedTab == 1,
-                                onClick = { selectedTab = 1 },
-                                icon = { Icon(Icons.Default.Settings, contentDescription = "Asetukset") },
-                                label = { Text("Asetukset") }
-                            )
-
-                            NavigationBarItem(
-                                selected = selectedTab == 2,
-                                onClick = { selectedTab = 2 },
-                                icon = { Icon(Icons.Default.History, contentDescription = "Historia") },
-                                label = { Text("Historia") }
-                            )
-                        }
+                        QuickPunchBottomBar(viewModel = viewModel)
                     },
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                     modifier = Modifier.fillMaxSize()
