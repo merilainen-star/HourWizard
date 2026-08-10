@@ -10,6 +10,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
+import androidx.core.net.toUri
 import com.numbawang.leimaus.MainActivity
 
 class NotificationHelper(private val context: Context) {
@@ -78,7 +79,53 @@ class NotificationHelper(private val context: Context) {
                 vibrationPattern = this@NotificationHelper.vibrationPattern
             }
             notificationManager.createNotificationChannel(channel)
+
+            // Its own channel at DEFAULT importance: an available test build is worth a line in
+            // the shade, but it must not buzz like a punch reminder, and the user has to be able
+            // to silence it without silencing the reminders.
+            val updateChannel = NotificationChannel(
+                UPDATE_CHANNEL_ID,
+                "Sovelluspäivitykset",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Ilmoitus kun GitHubissa on uusi testiversio saatavilla"
+                enableVibration(false)
+            }
+            notificationManager.createNotificationChannel(updateChannel)
         }
+    }
+
+    /**
+     * Tapping this opens the APK URL in the browser and hands off to Android's own installer, the
+     * same route the Settings card takes — see [com.numbawang.leimaus.ui.components.UpdateCard]
+     * for why the download is not performed in-app.
+     */
+    fun showUpdateAvailableNotification(versionName: String, sizeMb: Int, apkUrl: String) {
+        val downloadIntent = Intent(Intent.ACTION_VIEW, apkUrl.toUri()).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val downloadPendingIntent = PendingIntent.getActivity(
+            context,
+            601,
+            downloadIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val body = "Versio $versionName ($sizeMb MB). Napauta ladataksesi — " +
+            "leimaushistoria ja asetukset säilyvät."
+
+        val notification = NotificationCompat.Builder(context, UPDATE_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("Numbawang-päivitys saatavilla")
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
+            .setAutoCancel(true)
+            .setContentIntent(downloadPendingIntent)
+            .build()
+
+        notificationManager.notify(NOTIFICATION_UPDATE_ID, notification)
     }
 
     fun showMorningNotification() {
@@ -286,7 +333,9 @@ class NotificationHelper(private val context: Context) {
         /** Extra on the content intent naming the punch to run when the body is tapped. */
         const val EXTRA_PUNCH_ACTION = "com.numbawang.leimaus.EXTRA_PUNCH_ACTION"
         const val CHANNEL_ID = "numbawang_notifications"
+        const val UPDATE_CHANNEL_ID = "numbawang_updates"
         const val NOTIFICATION_ID = 8881
         const val NOTIFICATION_TARGET_ID = 8882
+        const val NOTIFICATION_UPDATE_ID = 8883
     }
 }

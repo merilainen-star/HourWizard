@@ -4,8 +4,16 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.google.android.gms.location.LocationServices
+import com.numbawang.leimaus.BuildConfig
 import com.numbawang.leimaus.data.network.TimecardRepository
 import com.numbawang.leimaus.data.preferences.UserPreferencesRepository
+import com.numbawang.leimaus.data.update.CheckForUpdateUseCase
+import com.numbawang.leimaus.data.update.HttpUpdateService
+import com.numbawang.leimaus.data.update.UpdateStatus
+import com.numbawang.leimaus.data.update.shouldNotifyAboutUpdate
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -69,6 +77,11 @@ class AlarmReceiver : BroadcastReceiver() {
                 if (isAllowed) {
                     notificationHelper.showMorningNotification()
                 }
+                // Deliberately outside the isAllowed gate: that gate is about workdays and
+                // holidays, and a new test build is worth knowing about on a day off too. It also
+                // rides the morning alarm rather than an alarm of its own, so there is nothing
+                // extra to cancel or restore after a reboot.
+                checkForUpdateInBackground(context, prefsRepository, notificationHelper)
                 // Reschedule for tomorrow morning
                 alarmScheduler.scheduleAlarms(settings.morningReminderTime, settings.eveningReminderTime)
             }
@@ -146,6 +159,46 @@ class AlarmReceiver : BroadcastReceiver() {
                     // Reschedule for tomorrow evening
                     alarmScheduler.scheduleAlarms(settings.morningReminderTime, settings.eveningReminderTime)
                 }
+            }
+        }
+    }
+
+    /**
+     * Asks GitHub whether a newer test build has been published and raises a notification for it.
+     *
+     * Holds the broadcast open with its own [goAsync] rather than sharing the geofence branch's:
+     * the two run independently, and a single shared PendingResult would have to outlive whichever
+     * finished last. Every failure is swallowed — a background check that cannot reach the network
+     * has nothing to tell the user, and an exception here would kill the alarm broadcast that also
+     * carries the punch reminder.
+     */
+    private fun checkForUpdateInBackground(
+        context: Context,
+        prefsRepository: UserPreferencesRepository,
+        notificationHelper: NotificationHelper
+    ) {
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val status = CheckForUpdateUseCase(
+                    service = HttpUpdateService(),
+                    installedVersionName = BuildConfig.VERSION_NAME,
+                ).execute()
+
+                val lastNotified = prefsRepository.getLastNotifiedUpdateVersion()
+                if (shouldNotifyAboutUpdate(status, lastNotified)) {
+                    val available = status as UpdateStatus.Available
+                    notificationHelper.showUpdateAvailableNotification(
+                        versionName = available.versionName,
+                        sizeMb = available.sizeMb,
+                        apkUrl = available.apkUrl,
+                    )
+                    prefsRepository.updateLastNotifiedUpdateVersion(available.versionName)
+                }
+            } catch (_: Exception) {
+                // Nothing actionable to report from a background check.
+            } finally {
+                pendingResult.finish()
             }
         }
     }

@@ -20,6 +20,17 @@ sealed interface UpdateStatus {
 }
 
 /**
+ * Whether a background check should raise a notification.
+ *
+ * Notifying once per published version is the point: the check runs every morning, and a version
+ * the user has already been told about — and possibly decided to skip — must not reappear daily.
+ * Only [UpdateStatus.Available] qualifies; a failed check stays silent rather than nagging about a
+ * network problem the user cannot act on from the notification shade.
+ */
+fun shouldNotifyAboutUpdate(status: UpdateStatus, lastNotifiedVersion: String): Boolean =
+    status is UpdateStatus.Available && status.versionName != lastNotifiedVersion
+
+/**
  * Compares the installed build against the one published by GitHub Actions.
  *
  * Versions are compared for equality, not order: the published build is a rolling test build

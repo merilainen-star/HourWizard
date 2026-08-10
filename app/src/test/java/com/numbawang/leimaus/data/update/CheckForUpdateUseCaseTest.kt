@@ -2,6 +2,7 @@ package com.numbawang.leimaus.data.update
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -81,5 +82,38 @@ class CheckForUpdateUseCaseTest {
 
         val failed = status as UpdateStatus.Failed
         assertTrue(failed.reason.contains("503"))
+    }
+
+    private fun available(versionName: String) =
+        UpdateStatus.Available(versionName, "https://example.invalid/Numbawang-test.apk", 22)
+
+    @Test
+    fun `an unseen version is worth a notification`() {
+        assertTrue(shouldNotifyAboutUpdate(available("1.0-a1b2c3d"), lastNotifiedVersion = ""))
+    }
+
+    /** The check runs every morning; the same build must not be announced day after day. */
+    @Test
+    fun `a version already notified about is not repeated`() {
+        assertFalse(
+            shouldNotifyAboutUpdate(available("1.0-a1b2c3d"), lastNotifiedVersion = "1.0-a1b2c3d")
+        )
+    }
+
+    @Test
+    fun `a newer version after a notified one is announced again`() {
+        assertTrue(
+            shouldNotifyAboutUpdate(available("1.0-e5f6g7h"), lastNotifiedVersion = "1.0-a1b2c3d")
+        )
+    }
+
+    /** Silence is the right answer for everything that is not an available build. */
+    @Test
+    fun `no other status raises a notification`() {
+        assertFalse(shouldNotifyAboutUpdate(UpdateStatus.UpToDate("1.0-a1b2c3d"), ""))
+        assertFalse(shouldNotifyAboutUpdate(UpdateStatus.LocalBuild, ""))
+        assertFalse(shouldNotifyAboutUpdate(UpdateStatus.Failed("ei verkkoa"), ""))
+        assertFalse(shouldNotifyAboutUpdate(UpdateStatus.Idle, ""))
+        assertFalse(shouldNotifyAboutUpdate(UpdateStatus.Checking, ""))
     }
 }

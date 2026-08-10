@@ -375,6 +375,19 @@ class UserPreferencesRepository(context: Context) {
         _settings.value = loadSettings()
     }
 
+    /**
+     * The published version the user has already been notified about. Not part of [AppSettings]:
+     * nothing in the UI renders it, and putting it there would rebuild the settings flow from a
+     * background broadcast for no observer.
+     */
+    fun getLastNotifiedUpdateVersion(): String = prefs.getString(KEY_LAST_NOTIFIED_UPDATE, "") ?: ""
+
+    fun updateLastNotifiedUpdateVersion(versionName: String) {
+        prefs.edit()
+            .putString(KEY_LAST_NOTIFIED_UPDATE, versionName)
+            .apply()
+    }
+
     fun getTalaatuid(): Int = prefs.getInt(KEY_TALAATUID, 1)
     fun getTyopisteid(): Int = prefs.getInt(KEY_TYOPISTEID, 5)
 
@@ -420,5 +433,6 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_TARGET_SOUND = "target_sound"
         private const val KEY_TARGET_VIB = "target_vib"
         private const val KEY_LAST_TARGET_ALERT = "last_target_alert"
+        private const val KEY_LAST_NOTIFIED_UPDATE = "last_notified_update_version"
     }
 }
