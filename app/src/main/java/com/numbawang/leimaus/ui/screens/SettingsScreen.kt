@@ -82,6 +82,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.numbawang.leimaus.ui.MainViewModel
 import com.numbawang.leimaus.ui.components.TimePickerDialog
+import com.numbawang.leimaus.ui.components.UpdateCard
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -219,6 +220,12 @@ fun SettingsScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Answering "am I running the latest build?" is the question you have when you open this
+        // screen, so the check runs once per visit rather than on a timer.
+        val updateStatus by viewModel.updateStatus.collectAsState()
+        LaunchedEffect(Unit) { viewModel.checkForUpdate() }
+        UpdateCard(status = updateStatus, onCheck = { viewModel.checkForUpdate() })
+
         // Credentials Section
         Card(
             modifier = Modifier.fillMaxWidth(),

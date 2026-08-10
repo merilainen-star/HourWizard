@@ -17,8 +17,14 @@ android {
     applicationId = "com.numbawang.leimaus"
     minSdk = 24
     targetSdk = 36
+    // versionCode stays at 1 deliberately. Android accepts a sideloaded reinstall when the
+    // package id and signing certificate match and versionCode is equal or higher, so a rolling
+    // test build does not need to burn version numbers.
     versionCode = 1
-    versionName = "1.0"
+    // CI passes -PversionSuffix=-<short sha>, which is what the in-app update check compares
+    // against latest.json. Local builds get a plain "1.0", which both keeps screenshots
+    // deterministic and is how the app recognises a build that came from a PC.
+    versionName = "1.0" + (findProperty("versionSuffix")?.toString() ?: "")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

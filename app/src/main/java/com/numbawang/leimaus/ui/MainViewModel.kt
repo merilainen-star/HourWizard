@@ -12,8 +12,12 @@ import com.numbawang.leimaus.data.db.AppDatabase
 import com.numbawang.leimaus.data.db.StampEntity
 import com.numbawang.leimaus.data.network.StampResult
 import com.numbawang.leimaus.data.network.TimecardRepository
+import com.numbawang.leimaus.BuildConfig
 import com.numbawang.leimaus.data.preferences.AppSettings
 import com.numbawang.leimaus.data.preferences.UserPreferencesRepository
+import com.numbawang.leimaus.data.update.CheckForUpdateUseCase
+import com.numbawang.leimaus.data.update.HttpUpdateService
+import com.numbawang.leimaus.data.update.UpdateStatus
 import com.numbawang.leimaus.util.BackupUtils
 import com.numbawang.leimaus.util.LocationUtils
 import kotlinx.coroutines.delay
@@ -37,6 +41,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val alarmScheduler = AlarmScheduler(application)
     private val notificationHelper = NotificationHelper(application)
 
+    // This app has no Application subclass, so the use case is built here. It is stateless apart
+    // from the installed version name, which cannot change while the process lives.
+    private val checkForUpdate by lazy {
+        CheckForUpdateUseCase(
+            service = HttpUpdateService(),
+            installedVersionName = BuildConfig.VERSION_NAME,
+        )
+    }
+
     val settings: StateFlow<AppSettings> = prefsRepository.settings
 
     val logs: StateFlow<List<StampEntity>> = db.stampDao().getAllLogs()
@@ -52,6 +65,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Result of a punch started from a notification tap; shown as a toast, not a snackbar. */
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
+
+    private val _updateStatus = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
+    val updateStatus: StateFlow<UpdateStatus> = _updateStatus.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -433,6 +449,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearToastMessage() {
         _toastMessage.value = null
+    }
+
+    /**
+     * Checks whether the installed build is the one CI last published. No-ops while a check is
+     * already running, so reopening Settings mid-request does not fire a second one.
+     */
+    fun checkForUpdate() {
+        if (_updateStatus.value is UpdateStatus.Checking) return
+        viewModelScope.launch {
+            _updateStatus.value = UpdateStatus.Checking
+            _updateStatus.value = checkForUpdate.execute()
+        }
     }
 
     fun clearHistory() {

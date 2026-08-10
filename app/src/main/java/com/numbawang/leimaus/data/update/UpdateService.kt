@@ -1,0 +1,78 @@
+package com.numbawang.leimaus.data.update
+
+import com.squareup.moshi.JsonClass
+import com.squareup.moshi.Moshi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
+
+/**
+ * What GitHub Actions published alongside the APK. See `.github/workflows/build-test-apk.yml` —
+ * these field names have to stay in step with the heredoc that writes latest.json there.
+ *
+ * Uses Moshi codegen like the rest of this project's models: `moshi-kotlin-codegen` runs through
+ * ksp here, so the adapter is generated at compile time and a mismatch is a build error rather
+ * than a runtime one.
+ */
+@JsonClass(generateAdapter = true)
+data class UpdateInfo(
+    /** Matches `BuildConfig.VERSION_NAME` of the published build, e.g. `1.0-c07cfac`. */
+    val versionName: String,
+    val commit: String,
+    val builtAtUtc: String,
+    val apkUrl: String,
+    val apkSizeBytes: Long,
+)
+
+/** Fails with an exception rather than returning null, so the caller can say why. */
+interface UpdateService {
+    suspend fun fetchLatest(): UpdateInfo
+}
+
+/**
+ * Reads the metadata file from the rolling test release.
+ *
+ * Deliberately a plain [HttpURLConnection] rather than routing through the OkHttp/Retrofit stack
+ * this app uses for the Tuntivelho API: that client carries auth interceptors and logging aimed at
+ * the timecard backend, and this is one unauthenticated GET of a few hundred bytes.
+ *
+ * It also reads the *release asset* rather than GitHub's REST API. Asset downloads are plain file
+ * requests with no rate limit, while the unauthenticated API allows only 60 calls an hour per
+ * address — a limit an app checking on every visit to Settings could actually hit.
+ */
+class HttpUpdateService(
+    private val url: String = LATEST_JSON_URL,
+) : UpdateService {
+
+    override suspend fun fetchLatest(): UpdateInfo = withContext(Dispatchers.IO) {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            // The asset URL redirects to a CDN host.
+            instanceFollowRedirects = true
+        }
+        try {
+            val code = connection.responseCode
+            if (code != HttpURLConnection.HTTP_OK) {
+                error("GitHub vastasi HTTP $code")
+            }
+            parseUpdateInfo(connection.inputStream.bufferedReader().use { it.readText() })
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    companion object {
+        const val LATEST_JSON_URL =
+            "https://github.com/merilainen-star/HourWizard/releases/download/test-build/latest.json"
+
+        private val moshi: Moshi = Moshi.Builder().build()
+
+        /** Separate from the request so it can be tested against the real published payload. */
+        fun parseUpdateInfo(json: String): UpdateInfo =
+            moshi.adapter(UpdateInfo::class.java).fromJson(json)
+                ?: error("julkaisun tiedot olivat tyhjät")
+    }
+}
