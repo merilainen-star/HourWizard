@@ -81,6 +81,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.numbawang.leimaus.ui.MainViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.numbawang.leimaus.ui.components.TimePickerDialog
 import com.numbawang.leimaus.ui.components.UpdateCard
 import java.text.SimpleDateFormat
@@ -220,10 +222,15 @@ fun SettingsScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Answering "am I running the latest build?" is the question you have when you open this
-        // screen, so the check runs once per visit rather than on a timer.
+        // Answering "am I running the latest build?" is the question you have when you look at
+        // this screen, so the check runs on every resume rather than on a timer.
+        //
+        // ON_RESUME rather than LaunchedEffect(Unit): the effect runs once per composition, so an
+        // app left open on Settings and returned to later kept showing the answer from whenever
+        // the screen was first opened. Observed on a device — the card claimed "Ajan tasalla"
+        // about a build that had been superseded minutes earlier.
         val updateStatus by viewModel.updateStatus.collectAsState()
-        LaunchedEffect(Unit) { viewModel.checkForUpdate() }
+        LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.checkForUpdate() }
         UpdateCard(status = updateStatus, onCheck = { viewModel.checkForUpdate() })
 
         // Credentials Section
