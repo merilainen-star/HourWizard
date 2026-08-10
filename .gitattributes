@@ -1,0 +1,14 @@
+# The Roborazzi baseline shipped in the initial commit was corrupt: byte 0x89 of the PNG signature
+# had been re-encoded as UTF-8 and its CRLF collapsed to LF, so ImageIO could not read it back and
+# every screenshot comparison failed. Mark binaries explicitly so no line-ending or encoding pass
+# can touch them again.
+*.png binary
+*.jpg binary
+*.webp binary
+*.jks binary
+*.keystore binary
+*.jar binary
+*.zip binary
+
+# Keep the wrapper script LF so it stays executable on the Linux CI runner.
+gradlew text eol=lf
