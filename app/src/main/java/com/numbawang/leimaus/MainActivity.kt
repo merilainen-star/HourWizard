@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
+import com.numbawang.leimaus.alarm.NotificationHelper
 import com.numbawang.leimaus.ui.MainViewModel
 import com.numbawang.leimaus.ui.screens.HistoryScreen
 import com.numbawang.leimaus.ui.screens.HomeScreen
@@ -58,6 +60,17 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleSharedLocationIntent(intent)
+        handlePunchIntent(intent)
+    }
+
+    /**
+     * Tapping the body of a reminder notification should punch, not just open the app. The extra
+     * is consumed so a configuration change does not replay the punch.
+     */
+    private fun handlePunchIntent(intent: android.content.Intent?) {
+        val punchAction = intent?.getStringExtra(NotificationHelper.EXTRA_PUNCH_ACTION) ?: return
+        intent.removeExtra(NotificationHelper.EXTRA_PUNCH_ACTION)
+        viewModel.punchFromNotification(punchAction)
     }
 
     private fun handleSharedLocationIntent(intent: android.content.Intent?) {
@@ -85,6 +98,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleSharedLocationIntent(intent)
+        if (savedInstanceState == null) {
+            handlePunchIntent(intent)
+        }
 
         setContent {
             val settings by viewModel.settings.collectAsState()
@@ -94,6 +110,7 @@ class MainActivity : ComponentActivity() {
                 val snackbarHostState = remember { SnackbarHostState() }
 
                 val uiMessage by viewModel.uiMessage.collectAsState()
+                val toastMessage by viewModel.toastMessage.collectAsState()
 
                 // Request Notification and Location permissions
                 val permissionLauncher = rememberLauncherForActivityResult(
@@ -130,6 +147,13 @@ class MainActivity : ComponentActivity() {
                     uiMessage?.let { msg ->
                         snackbarHostState.showSnackbar(msg.text)
                         viewModel.clearUiMessage()
+                    }
+                }
+
+                LaunchedEffect(toastMessage) {
+                    toastMessage?.let { msg ->
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        viewModel.clearToastMessage()
                     }
                 }
 

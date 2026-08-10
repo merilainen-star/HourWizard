@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.numbawang.leimaus.alarm.AlarmScheduler
+import com.numbawang.leimaus.alarm.NotificationActionReceiver
 import com.numbawang.leimaus.alarm.NotificationHelper
 import com.numbawang.leimaus.data.db.AppDatabase
 import com.numbawang.leimaus.data.db.StampEntity
@@ -48,6 +49,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiMessage = MutableStateFlow<UiMessage?>(null)
     val uiMessage: StateFlow<UiMessage?> = _uiMessage.asStateFlow()
 
+    /** Result of a punch started from a notification tap; shown as a toast, not a snackbar. */
+    private val _toastMessage = MutableStateFlow<String?>(null)
+    val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -89,14 +94,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun handleGlobalError(errorMsg: String) {
-        val userFriendlyMessage = when {
+        _uiMessage.value = UiMessage(friendlyErrorMessage(errorMsg), isError = true)
+    }
+
+    private fun friendlyErrorMessage(errorMsg: String): String {
+        return when {
             errorMsg.contains("404") -> " Virhe HTTP 404: Palvelimen rajapintaa ei löytynyt. Tarkista palvelimen osoite asetuksista."
             errorMsg.contains("500") -> " Virhe HTTP 500: Palvelinvirhe. Tuntivelho-palvelimella tapahtui sisäinen virhe."
             errorMsg.contains("401") || errorMsg.contains("403") -> " Virhe HTTP ${if (errorMsg.contains("401")) "401" else "403"}: Autentikointivirhe. Tarkista käyttäjätunnus ja salasana."
             errorMsg.contains("Yhteysvirhe") || errorMsg.contains("Unable to resolve host") || errorMsg.contains("Failed to connect") -> " Verkkovirhe: Tarkista internetyhteys ja palvelimen osoite."
             else -> " Virhe: $errorMsg"
         }
-        _uiMessage.value = UiMessage(userFriendlyMessage, isError = true)
+    }
+
+    /** Route a result either to the in-app snackbar or to a toast (notification-driven punches). */
+    private fun emitResult(text: String, isError: Boolean, asToast: Boolean) {
+        if (asToast) {
+            _toastMessage.value = text
+        } else {
+            _uiMessage.value = UiMessage(text, isError)
+        }
+    }
+
+    /**
+     * Run the punch requested by tapping a notification body. Mirrors the action buttons, but the
+     * app is in the foreground here, so the outcome is reported with a toast.
+     */
+    fun punchFromNotification(punchAction: String) {
+        when (punchAction) {
+            NotificationActionReceiver.ACTION_CLOCK_IN -> clockIn(asToast = true)
+            NotificationActionReceiver.ACTION_CLOCK_OUT -> clockOut(asToast = true)
+        }
     }
 
     fun refreshServerBalance() {
@@ -190,7 +218,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiMessage.value = UiMessage("Asetukset tallennettu ja muistutukset päivitetty!", isError = false)
     }
 
-    fun clockIn() {
+    fun clockIn(asToast: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
             val result = repository.clockIn()
@@ -205,16 +233,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // run from clock-in onwards — the target is usually met before the
                     // evening alarm would otherwise start the ticker
                     alarmScheduler.scheduleEveningTicker()
-                    _uiMessage.value = UiMessage(result.message, isError = false)
+                    emitResult(result.message, isError = false, asToast = asToast)
                 }
                 is StampResult.Error -> {
-                    handleGlobalError(result.errorMessage)
+                    emitResult(friendlyErrorMessage(result.errorMessage), isError = true, asToast = asToast)
                 }
             }
         }
     }
 
-    fun clockOut() {
+    fun clockOut(asToast: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
             val result = repository.clockOut()
@@ -224,10 +252,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is StampResult.Success -> {
                     notificationHelper.cancelNotification()
                     alarmScheduler.cancelEveningTicker()
-                    _uiMessage.value = UiMessage(result.message, isError = false)
+                    emitResult(result.message, isError = false, asToast = asToast)
                 }
                 is StampResult.Error -> {
-                    handleGlobalError(result.errorMessage)
+                    emitResult(friendlyErrorMessage(result.errorMessage), isError = true, asToast = asToast)
                 }
             }
         }
@@ -401,6 +429,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearUiMessage() {
         _uiMessage.value = null
+    }
+
+    fun clearToastMessage() {
+        _toastMessage.value = null
     }
 
     fun clearHistory() {

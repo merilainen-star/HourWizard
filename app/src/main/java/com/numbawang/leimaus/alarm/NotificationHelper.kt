@@ -46,6 +46,26 @@ class NotificationHelper(private val context: Context) {
         }
     }
 
+    /**
+     * Content intent for a reminder notification. When [punchAction] is given, tapping the body
+     * of the notification opens the app *and* performs that punch — tapping the notification is
+     * the same shortcut as its action button, not just an app launcher.
+     */
+    private fun buildContentPendingIntent(requestCode: Int, punchAction: String? = null): PendingIntent {
+        val contentIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (punchAction != null) {
+                putExtra(EXTRA_PUNCH_ACTION, punchAction)
+            }
+        }
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            contentIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -64,15 +84,8 @@ class NotificationHelper(private val context: Context) {
     fun showMorningNotification() {
         triggerHapticFeedback()
 
-        val contentIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val contentPendingIntent = PendingIntent.getActivity(
-            context,
-            101,
-            contentIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val contentPendingIntent =
+            buildContentPendingIntent(101, NotificationActionReceiver.ACTION_CLOCK_IN)
 
         // Action button "SISÄÄN"
         val clockInIntent = Intent(context, NotificationActionReceiver::class.java).apply {
@@ -109,15 +122,8 @@ class NotificationHelper(private val context: Context) {
     fun showEveningNotification(clockInTimeStr: String, balanceStr: String) {
         triggerHapticFeedback()
 
-        val contentIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val contentPendingIntent = PendingIntent.getActivity(
-            context,
-            201,
-            contentIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val contentPendingIntent =
+            buildContentPendingIntent(201, NotificationActionReceiver.ACTION_CLOCK_OUT)
 
         // Action button "ULOS"
         val clockOutIntent = Intent(context, NotificationActionReceiver::class.java).apply {
@@ -163,15 +169,8 @@ class NotificationHelper(private val context: Context) {
     fun showLocationArrivalNotification() {
         triggerHapticFeedback()
 
-        val contentIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val contentPendingIntent = PendingIntent.getActivity(
-            context,
-            301,
-            contentIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val contentPendingIntent =
+            buildContentPendingIntent(301, NotificationActionReceiver.ACTION_CLOCK_IN)
 
         val clockInIntent = Intent(context, NotificationActionReceiver::class.java).apply {
             action = NotificationActionReceiver.ACTION_CLOCK_IN
@@ -208,15 +207,8 @@ class NotificationHelper(private val context: Context) {
     fun showLocationDepartureNotification() {
         triggerHapticFeedback()
 
-        val contentIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val contentPendingIntent = PendingIntent.getActivity(
-            context,
-            401,
-            contentIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val contentPendingIntent =
+            buildContentPendingIntent(401, NotificationActionReceiver.ACTION_CLOCK_OUT)
 
         val clockOutIntent = Intent(context, NotificationActionReceiver::class.java).apply {
             action = NotificationActionReceiver.ACTION_CLOCK_OUT
@@ -255,15 +247,9 @@ class NotificationHelper(private val context: Context) {
             triggerHapticFeedback()
         }
 
-        val contentIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val contentPendingIntent = PendingIntent.getActivity(
-            context,
-            301,
-            contentIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        // Own request code: sharing one with the arrival notification would let
+        // FLAG_UPDATE_CURRENT overwrite that notification's punch extra
+        val contentPendingIntent = buildContentPendingIntent(501)
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -297,6 +283,8 @@ class NotificationHelper(private val context: Context) {
     }
 
     companion object {
+        /** Extra on the content intent naming the punch to run when the body is tapped. */
+        const val EXTRA_PUNCH_ACTION = "com.numbawang.leimaus.EXTRA_PUNCH_ACTION"
         const val CHANNEL_ID = "numbawang_notifications"
         const val NOTIFICATION_ID = 8881
         const val NOTIFICATION_TARGET_ID = 8882
