@@ -1,9 +1,7 @@
 package com.numbawang.leimaus.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,7 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ShowChart
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -27,9 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -42,6 +37,7 @@ import com.numbawang.leimaus.data.preferences.AppSettings
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.max
 
 data class BalanceDataPoint(
     val dateLabel: String,
@@ -49,6 +45,46 @@ data class BalanceDataPoint(
     val rawString: String,
     val timestamp: Long
 )
+
+data class BalanceChartViewport(
+    val minHours: Double,
+    val maxHours: Double
+)
+
+/**
+ * Keeps the chart inside the actual 0–60 hour flexitime range while zooming in
+ * enough for a one-hour change to be clearly visible.
+ */
+fun calculateBalanceChartViewport(points: List<BalanceDataPoint>): BalanceChartViewport {
+    val fullMin = 0.0
+    val fullMax = 60.0
+    val minimumSpan = 4.0
+
+    if (points.isEmpty()) return BalanceChartViewport(fullMin, fullMax)
+
+    val pointMin = points.minOf { it.hours }.coerceIn(fullMin, fullMax)
+    val pointMax = points.maxOf { it.hours }.coerceIn(fullMin, fullMax)
+    val dataSpan = pointMax - pointMin
+    val viewportSpan = max(minimumSpan, dataSpan * 1.5).coerceAtMost(fullMax - fullMin)
+    val center = (pointMin + pointMax) / 2.0
+
+    var viewportMin = center - viewportSpan / 2.0
+    var viewportMax = center + viewportSpan / 2.0
+
+    if (viewportMin < fullMin) {
+        viewportMax += fullMin - viewportMin
+        viewportMin = fullMin
+    }
+    if (viewportMax > fullMax) {
+        viewportMin -= viewportMax - fullMax
+        viewportMax = fullMax
+    }
+
+    return BalanceChartViewport(
+        minHours = viewportMin.coerceAtLeast(fullMin),
+        maxHours = viewportMax.coerceAtMost(fullMax)
+    )
+}
 
 fun parseBalanceToHours(balanceStr: String): Double? {
     if (balanceStr.isBlank()) return null
@@ -146,7 +182,6 @@ fun BalanceChartCard(
     }
 
     val currentHours = points.lastOrNull()?.hours ?: parseBalanceToHours(settings.lastServerBalance) ?: 0.0
-    val isDanger = currentHours > 40.0 || currentHours <= 0.0
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -171,7 +206,7 @@ fun BalanceChartCard(
                     Icon(
                         imageVector = Icons.Default.ShowChart,
                         contentDescription = null,
-                        tint = if (isDanger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -182,7 +217,7 @@ fun BalanceChartCard(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Sallittu tasealue 0h – +40h",
+                            text = "0–60 h · lähennetty näkymä",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -192,49 +227,20 @@ fun BalanceChartCard(
                 // Status Badge
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = if (isDanger) Color(0xFFFEE2E2) else Color(0xFFD1FAE5)
+                    color = MaterialTheme.colorScheme.primaryContainer
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (isDanger) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = Color(0xFFDC2626),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                        }
                         val formattedHours = formatHoursToHhMm(currentHours)
                         Text(
                             text = formattedHours,
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.ExtraBold,
-                            color = if (isDanger) Color(0xFFDC2626) else Color(0xFF059669)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
-                }
-            }
-
-            if (isDanger) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFFFEF2F2),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = if (currentHours > 40.0)
-                            "⚠️ Vaara: Tuntitase ylittää +40 tunnin enimmäisrajan!"
-                        else
-                            "⚠️ Vaara: Tuntitase on nollassa tai miinuksella!",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF991B1B),
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                    )
                 }
             }
 
@@ -247,43 +253,6 @@ fun BalanceChartCard(
                     .fillMaxWidth()
                     .height(180.dp)
             )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Legend / Help
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(Color(0xFF10B981), RoundedCornerShape(2.dp))
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Normaali (0–40h)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(Color(0xFFEF4444), RoundedCornerShape(2.dp))
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Kriittinen (>40h / ≤0h)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
         }
     }
 }
@@ -295,8 +264,8 @@ fun BalanceCanvasChart(
 ) {
     val textMeasurer = rememberTextMeasurer()
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val dangerColor = Color(0xFFEF4444)
-    val safeColor = Color(0xFF10B981)
+    val gridColor = MaterialTheme.colorScheme.outlineVariant
+    val lineColor = MaterialTheme.colorScheme.primary
 
     Canvas(modifier = modifier) {
         val width = size.width
@@ -312,12 +281,10 @@ fun BalanceCanvasChart(
 
         if (graphWidth <= 0 || graphHeight <= 0) return@Canvas
 
-        val maxPointVal = points.maxOfOrNull { it.hours } ?: 0.0
-        val minPointVal = points.minOfOrNull { it.hours } ?: 0.0
-
-        val maxY = maxOf(maxPointVal, 45.0)
-        val minY = minOf(minPointVal, -5.0)
-        val yRange = if (maxY - minY == 0.0) 1.0 else (maxY - minY)
+        val viewport = calculateBalanceChartViewport(points)
+        val minY = viewport.minHours
+        val maxY = viewport.maxHours
+        val yRange = maxY - minY
 
         fun valueToY(valHours: Double): Float {
             val normalized = (valHours - minY) / yRange
@@ -329,63 +296,36 @@ fun BalanceCanvasChart(
             return paddingLeft + (index.toFloat() / (points.size - 1)) * graphWidth
         }
 
-        val y40 = valueToY(40.0)
-        val y0 = valueToY(0.0)
-
-        // Draw background zones
-        if (y40 >= paddingTop) {
-            drawRect(
-                color = dangerColor.copy(alpha = 0.08f),
-                topLeft = Offset(paddingLeft, paddingTop),
-                size = Size(graphWidth, (y40 - paddingTop).coerceAtLeast(0f))
-            )
-        }
-
-        val safeTop = y40.coerceIn(paddingTop, paddingTop + graphHeight)
-        val safeBottom = y0.coerceIn(paddingTop, paddingTop + graphHeight)
-        if (safeBottom > safeTop) {
-            drawRect(
-                color = safeColor.copy(alpha = 0.08f),
-                topLeft = Offset(paddingLeft, safeTop),
-                size = Size(graphWidth, safeBottom - safeTop)
-            )
-        }
-
-        if (y0 <= paddingTop + graphHeight) {
-            drawRect(
-                color = dangerColor.copy(alpha = 0.08f),
-                topLeft = Offset(paddingLeft, y0),
-                size = Size(graphWidth, (paddingTop + graphHeight - y0).coerceAtLeast(0f))
-            )
-        }
-
-        // Draw horizontal threshold lines (+40h and 0h)
-        val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-
-        drawLine(
-            color = dangerColor,
-            start = Offset(paddingLeft, y40),
-            end = Offset(paddingLeft + graphWidth, y40),
-            strokeWidth = 2.dp.toPx(),
-            pathEffect = dashEffect
-        )
-
-        drawLine(
-            color = dangerColor,
-            start = Offset(paddingLeft, y0),
-            end = Offset(paddingLeft + graphWidth, y0),
-            strokeWidth = 2.dp.toPx(),
-            pathEffect = dashEffect
-        )
-
-        val dangerTextStyle = TextStyle(fontSize = 10.sp, color = dangerColor, fontWeight = FontWeight.Bold)
         val textStyle = TextStyle(fontSize = 10.sp, color = labelColor)
 
-        val text40 = textMeasurer.measure("+40h", dangerTextStyle)
-        drawText(text40, topLeft = Offset(paddingLeft - text40.size.width - 6.dp.toPx(), y40 - text40.size.height / 2f))
+        // Neutral grid follows the zoomed viewport. Its labels make the scale explicit
+        // without suggesting warning thresholds.
+        val gridLineCount = 4
+        for (i in 0..gridLineCount) {
+            val fraction = i.toDouble() / gridLineCount
+            val gridValue = minY + yRange * fraction
+            val gridY = valueToY(gridValue)
+            drawLine(
+                color = gridColor,
+                start = Offset(paddingLeft, gridY),
+                end = Offset(paddingLeft + graphWidth, gridY),
+                strokeWidth = 1.dp.toPx()
+            )
 
-        val text0 = textMeasurer.measure("0h", dangerTextStyle)
-        drawText(text0, topLeft = Offset(paddingLeft - text0.size.width - 6.dp.toPx(), y0 - text0.size.height / 2f))
+            val gridLabel = if (gridValue % 1.0 == 0.0) {
+                "${gridValue.toInt()}h"
+            } else {
+                String.format(Locale.getDefault(), "%.1fh", gridValue)
+            }
+            val gridLayout = textMeasurer.measure(gridLabel, textStyle)
+            drawText(
+                gridLayout,
+                topLeft = Offset(
+                    paddingLeft - gridLayout.size.width - 6.dp.toPx(),
+                    gridY - gridLayout.size.height / 2f
+                )
+            )
+        }
 
         // Draw line segments
         if (points.size > 1) {
@@ -395,13 +335,8 @@ fun BalanceCanvasChart(
                 val x2 = indexToX(i + 1)
                 val y2 = valueToY(points[i + 1].hours)
 
-                val inDanger = points[i].hours > 40.0 || points[i].hours <= 0.0 ||
-                               points[i + 1].hours > 40.0 || points[i + 1].hours <= 0.0
-
-                val strokeColor = if (inDanger) dangerColor else safeColor
-
                 drawLine(
-                    color = strokeColor,
+                    color = lineColor,
                     start = Offset(x1, y1),
                     end = Offset(x2, y2),
                     strokeWidth = 3.dp.toPx(),
@@ -414,17 +349,15 @@ fun BalanceCanvasChart(
         points.forEachIndexed { i, p ->
             val x = indexToX(i)
             val y = valueToY(p.hours)
-            val isPtDanger = p.hours > 40.0 || p.hours <= 0.0
-            val dotColor = if (isPtDanger) dangerColor else safeColor
 
             drawCircle(
-                color = dotColor.copy(alpha = 0.3f),
+                color = lineColor.copy(alpha = 0.3f),
                 radius = 7.dp.toPx(),
                 center = Offset(x, y)
             )
 
             drawCircle(
-                color = dotColor,
+                color = lineColor,
                 radius = 4.dp.toPx(),
                 center = Offset(x, y)
             )
@@ -432,7 +365,7 @@ fun BalanceCanvasChart(
             val valStr = formatHoursToHhMm(p.hours)
             val valLayout = textMeasurer.measure(
                 valStr,
-                TextStyle(fontSize = 9.sp, color = dotColor, fontWeight = FontWeight.Bold)
+                TextStyle(fontSize = 9.sp, color = lineColor, fontWeight = FontWeight.Bold)
             )
             drawText(
                 valLayout,
