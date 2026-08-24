@@ -1,6 +1,8 @@
 package com.numbawang.leimaus
 
 import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -45,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
 import com.numbawang.leimaus.alarm.NotificationHelper
+import com.numbawang.leimaus.data.update.ApkUpdateInstaller
 import com.numbawang.leimaus.ui.MainViewModel
 import com.numbawang.leimaus.ui.screens.HistoryScreen
 import com.numbawang.leimaus.ui.screens.HomeScreen
@@ -55,12 +58,58 @@ import com.numbawang.leimaus.ui.theme.MyApplicationTheme
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
+    private var requestedTab by mutableIntStateOf(-1)
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (handleUpdateInstallStatusIntent(intent)) return
+        handleOpenUpdateIntent(intent)
         handleSharedLocationIntent(intent)
         handlePunchIntent(intent)
+    }
+
+    private fun handleOpenUpdateIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(NotificationHelper.EXTRA_OPEN_UPDATE, false) == true) {
+            intent.removeExtra(NotificationHelper.EXTRA_OPEN_UPDATE)
+            requestedTab = 1
+        }
+    }
+
+    /** Handles the sanitized failure callback forwarded by the private install receiver. */
+    private fun handleUpdateInstallStatusIntent(intent: Intent?): Boolean {
+        if (intent?.action != ApkUpdateInstaller.ACTION_INSTALL_STATUS) return false
+
+        when (val status = intent.getIntExtra(
+            PackageInstaller.EXTRA_STATUS,
+            PackageInstaller.STATUS_FAILURE,
+        )) {
+            PackageInstaller.STATUS_SUCCESS -> Unit
+
+            else -> {
+                val systemMessage = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+                val reason = when (status) {
+                    PackageInstaller.STATUS_FAILURE_ABORTED ->
+                        "Päivityksen asennus peruttiin."
+                    PackageInstaller.STATUS_FAILURE_BLOCKED ->
+                        "Android esti päivityksen asentamisen."
+                    PackageInstaller.STATUS_FAILURE_CONFLICT ->
+                        "Päivityksen paketti tai allekirjoitus ei vastaa asennettua sovellusta."
+                    PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
+                        "Päivitys ei ole yhteensopiva tämän laitteen kanssa."
+                    PackageInstaller.STATUS_FAILURE_STORAGE ->
+                        "Laitteessa ei ole riittävästi tallennustilaa päivitykselle."
+                    else -> "Päivityksen asennus epäonnistui."
+                }
+                viewModel.onUpdateInstallFailed(
+                    if (systemMessage.isNullOrBlank()) reason else "$reason $systemMessage",
+                    isError = status != PackageInstaller.STATUS_FAILURE_ABORTED,
+                )
+            }
+        }
+
+        intent.action = null
+        return true
     }
 
     /**
@@ -97,9 +146,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handleSharedLocationIntent(intent)
-        if (savedInstanceState == null) {
-            handlePunchIntent(intent)
+        val handledUpdateStatus =
+            savedInstanceState == null && handleUpdateInstallStatusIntent(intent)
+        if (!handledUpdateStatus) {
+            handleOpenUpdateIntent(intent)
+            handleSharedLocationIntent(intent)
+            if (savedInstanceState == null) handlePunchIntent(intent)
         }
 
         setContent {
@@ -108,6 +160,13 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 var selectedTab by remember { mutableIntStateOf(0) }
                 val snackbarHostState = remember { SnackbarHostState() }
+
+                LaunchedEffect(requestedTab) {
+                    if (requestedTab >= 0) {
+                        selectedTab = requestedTab
+                        requestedTab = -1
+                    }
+                }
 
                 val uiMessage by viewModel.uiMessage.collectAsState()
                 val toastMessage by viewModel.toastMessage.collectAsState()

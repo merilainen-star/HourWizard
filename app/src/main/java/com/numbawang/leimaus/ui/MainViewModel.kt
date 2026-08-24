@@ -3,6 +3,7 @@ package com.numbawang.leimaus.ui
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.numbawang.leimaus.alarm.AlarmScheduler
@@ -16,11 +17,13 @@ import com.numbawang.leimaus.BuildConfig
 import com.numbawang.leimaus.data.preferences.AppSettings
 import com.numbawang.leimaus.data.preferences.UserPreferencesRepository
 import com.numbawang.leimaus.data.update.CheckForUpdateUseCase
+import com.numbawang.leimaus.data.update.ApkUpdateInstaller
 import com.numbawang.leimaus.data.update.HttpUpdateService
 import com.numbawang.leimaus.data.update.UpdateStatus
 import com.numbawang.leimaus.util.BackupUtils
 import com.numbawang.leimaus.util.LocationUtils
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +43,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = TimecardRepository(prefsRepository, db.stampDao())
     private val alarmScheduler = AlarmScheduler(application)
     private val notificationHelper = NotificationHelper(application)
+    private val apkUpdateInstaller = ApkUpdateInstaller(application)
+    private var activeUpdate: UpdateStatus.Available? = null
 
     // This app has no Application subclass, so the use case is built here. It is stateless apart
     // from the installed version name, which cannot change while the process lives.
@@ -456,11 +461,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * already running, so reopening Settings mid-request does not fire a second one.
      */
     fun checkForUpdate() {
-        if (_updateStatus.value is UpdateStatus.Checking) return
+        if (
+            _updateStatus.value is UpdateStatus.Checking ||
+            _updateStatus.value is UpdateStatus.Downloading ||
+            _updateStatus.value is UpdateStatus.AwaitingInstallConfirmation
+        ) return
         viewModelScope.launch {
             _updateStatus.value = UpdateStatus.Checking
             _updateStatus.value = checkForUpdate.execute()
         }
+    }
+
+    /** Downloads the APK into Android's private installer session and opens system confirmation. */
+    fun installAvailableUpdate() {
+        val available = (_updateStatus.value as? UpdateStatus.Available) ?: activeUpdate ?: return
+        activeUpdate = available
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !getApplication<Application>().packageManager.canRequestPackageInstalls()
+        ) {
+            _uiMessage.value = UiMessage(
+                "Salli ensin päivitysten asentaminen Numbawang-sovelluksesta.",
+                isError = false,
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                apkUpdateInstaller.downloadAndCommit(available) { progress ->
+                    _updateStatus.value = UpdateStatus.Downloading(
+                        versionName = available.versionName,
+                        progressPercent = progress,
+                    )
+                }
+                _updateStatus.value = UpdateStatus.AwaitingInstallConfirmation(
+                    available.versionName
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _updateStatus.value = available
+                _uiMessage.value = UiMessage(
+                    "Päivityksen lataus epäonnistui: ${error.message ?: "tuntematon virhe"}",
+                    isError = true,
+                )
+            }
+        }
+    }
+
+    /** Restores the download button if Android's installer rejects or the user cancels. */
+    fun onUpdateInstallFailed(reason: String, isError: Boolean = true) {
+        _updateStatus.value = activeUpdate ?: UpdateStatus.Idle
+        _uiMessage.value = UiMessage(reason, isError = isError)
+        if (activeUpdate == null) checkForUpdate()
     }
 
     fun clearHistory() {

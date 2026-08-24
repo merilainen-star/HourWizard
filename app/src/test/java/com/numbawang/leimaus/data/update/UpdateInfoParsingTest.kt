@@ -19,7 +19,8 @@ class UpdateInfoParsingTest {
           "commit": "9d9fe8f",
           "builtAtUtc": "2026-08-08T12:32:27Z",
           "apkUrl": "https://github.com/merilainen-star/HourWizard/releases/download/test-build/Numbawang-test.apk",
-          "apkSizeBytes": 19436901
+          "apkSizeBytes": 19436901,
+          "apkSha256": "8f3b39ddc4a22e88a35e334e5d36e740d0a176d47010f9467e119e44dd3c2c28"
         }
     """.trimIndent()
 
@@ -31,6 +32,10 @@ class UpdateInfoParsingTest {
         assertEquals("9d9fe8f", info.commit)
         assertEquals("2026-08-08T12:32:27Z", info.builtAtUtc)
         assertEquals(19_436_901L, info.apkSizeBytes)
+        assertEquals(
+            "8f3b39ddc4a22e88a35e334e5d36e740d0a176d47010f9467e119e44dd3c2c28",
+            info.apkSha256,
+        )
         assertTrue(info.apkUrl.endsWith("Numbawang-test.apk"))
     }
 

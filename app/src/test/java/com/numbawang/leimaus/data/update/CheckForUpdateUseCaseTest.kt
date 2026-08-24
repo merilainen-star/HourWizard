@@ -15,6 +15,7 @@ class CheckForUpdateUseCaseTest {
             builtAtUtc = "2026-08-08T09:00:00Z",
             apkUrl = "https://example.invalid/Numbawang-test.apk",
             apkSizeBytes = sizeBytes,
+            apkSha256 = "8f3b39ddc4a22e88a35e334e5d36e740d0a176d47010f9467e119e44dd3c2c28",
         )
 
     private fun service(info: UpdateInfo) = object : UpdateService {
@@ -60,6 +61,8 @@ class CheckForUpdateUseCaseTest {
         val available = status as UpdateStatus.Available
         assertEquals("1.0-a1b2c3d", available.versionName)
         assertEquals("https://example.invalid/Numbawang-test.apk", available.apkUrl)
+        assertEquals(19_420_493L, available.apkSizeBytes)
+        assertEquals(64, available.apkSha256.length)
     }
 
     @Test
@@ -85,7 +88,13 @@ class CheckForUpdateUseCaseTest {
     }
 
     private fun available(versionName: String) =
-        UpdateStatus.Available(versionName, "https://example.invalid/Numbawang-test.apk", 22)
+        UpdateStatus.Available(
+            versionName = versionName,
+            apkUrl = "https://example.invalid/Numbawang-test.apk",
+            apkSizeBytes = 22_000_000,
+            apkSha256 = "8f3b39ddc4a22e88a35e334e5d36e740d0a176d47010f9467e119e44dd3c2c28",
+            sizeMb = 22,
+        )
 
     @Test
     fun `an unseen version is worth a notification`() {
@@ -115,5 +124,12 @@ class CheckForUpdateUseCaseTest {
         assertFalse(shouldNotifyAboutUpdate(UpdateStatus.Failed("ei verkkoa"), ""))
         assertFalse(shouldNotifyAboutUpdate(UpdateStatus.Idle, ""))
         assertFalse(shouldNotifyAboutUpdate(UpdateStatus.Checking, ""))
+        assertFalse(shouldNotifyAboutUpdate(UpdateStatus.Downloading("1.0-a1b2c3d", 50), ""))
+        assertFalse(
+            shouldNotifyAboutUpdate(
+                UpdateStatus.AwaitingInstallConfirmation("1.0-a1b2c3d"),
+                "",
+            )
+        )
     }
 }

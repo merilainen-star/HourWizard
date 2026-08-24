@@ -231,7 +231,11 @@ fun SettingsScreen(
         // about a build that had been superseded minutes earlier.
         val updateStatus by viewModel.updateStatus.collectAsState()
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.checkForUpdate() }
-        UpdateCard(status = updateStatus, onCheck = { viewModel.checkForUpdate() })
+        UpdateCard(
+            status = updateStatus,
+            onCheck = { viewModel.checkForUpdate() },
+            onInstall = { viewModel.installAvailableUpdate() },
+        )
 
         // Credentials Section
         Card(

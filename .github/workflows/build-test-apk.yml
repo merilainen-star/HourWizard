@@ -120,6 +120,8 @@ jobs:
           mkdir -p dist
           cp "$APK" dist/Numbawang-test.apk
           echo "apk_mb=$(du -m "$APK" | cut -f1)" >> "$GITHUB_OUTPUT"
+          APK_SHA256=$(sha256sum "$APK" | cut -d ' ' -f1)
+          echo "apk_sha256=$APK_SHA256" >> "$GITHUB_OUTPUT"
 
           # The app reads this to tell whether the installed build is the published one. It is a
           # release asset rather than a call to GitHub's API, which is rate-limited to 60 requests
@@ -130,7 +132,8 @@ jobs:
             "commit": "${GITHUB_SHA::7}",
             "builtAtUtc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "apkUrl": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/test-build/Numbawang-test.apk",
-            "apkSizeBytes": $(stat -c%s "$APK")
+            "apkSizeBytes": $(stat -c%s "$APK"),
+            "apkSha256": "$APK_SHA256"
           }
           JSON
           python3 -c "import json;json.load(open('dist/latest.json'))" \
@@ -194,6 +197,7 @@ jobs:
           | Actions run | [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) |
           | Version | 1.0-${GITHUB_SHA::7} |
           | Signing certificate SHA-256 | \`${KEYSTORE_SHA256}\` |
+          | APK SHA-256 | \`${{ steps.results.outputs.apk_sha256 }}\` |
 
           Unit tests ${{ steps.results.outputs.unit_tests }}/${{ steps.results.outputs.unit_failures }}/${{ steps.results.outputs.unit_errors }} ·
           ${{ steps.results.outputs.screenshots }} screenshot comparisons ·

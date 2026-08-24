@@ -8,7 +8,17 @@ sealed interface UpdateStatus {
 
     data class UpToDate(val versionName: String) : UpdateStatus
 
-    data class Available(val versionName: String, val apkUrl: String, val sizeMb: Int) : UpdateStatus
+    data class Available(
+        val versionName: String,
+        val apkUrl: String,
+        val apkSizeBytes: Long,
+        val apkSha256: String,
+        val sizeMb: Int,
+    ) : UpdateStatus
+
+    data class Downloading(val versionName: String, val progressPercent: Int) : UpdateStatus
+
+    data class AwaitingInstallConfirmation(val versionName: String) : UpdateStatus
 
     /**
      * The installed build came from a PC, not from a release, so there is nothing meaningful to
@@ -58,6 +68,8 @@ class CheckForUpdateUseCase(
             UpdateStatus.Available(
                 versionName = info.versionName,
                 apkUrl = info.apkUrl,
+                apkSizeBytes = info.apkSizeBytes,
+                apkSha256 = info.apkSha256,
                 // Rounded for display only; the exact byte count is not useful to a reader.
                 sizeMb = ((info.apkSizeBytes + 524_288) / 1_048_576).toInt(),
             )

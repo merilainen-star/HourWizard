@@ -191,7 +191,6 @@ class AlarmReceiver : BroadcastReceiver() {
                     notificationHelper.showUpdateAvailableNotification(
                         versionName = available.versionName,
                         sizeMb = available.sizeMb,
-                        apkUrl = available.apkUrl,
                     )
                     prefsRepository.updateLastNotifiedUpdateVersion(available.versionName)
                 }

@@ -1,6 +1,10 @@
 package com.numbawang.leimaus.ui.components
 
 import android.content.Intent
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +21,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,18 +39,21 @@ import com.numbawang.leimaus.data.update.UpdateStatus
  * Says whether the installed build is the one GitHub Actions last published, and offers the
  * download when it is not.
  *
- * The download deliberately hands off to the browser and Android's own installer rather than
- * fetching the APK in-app. In-app installation would need `REQUEST_INSTALL_PACKAGES`, a
- * `FileProvider` and download handling, and would still show the same system "Update this app?"
- * dialog — it saves one tap for a permission Play Protect treats with suspicion.
- *
- * Downloading an APK to install over an existing app sounds risky, but the signing certificate
- * protects it: Android refuses to install a package signed by a different key over this one, so a
- * substituted binary cannot take the app's place.
+ * The APK is streamed into Android's private PackageInstaller staging area. The user never has
+ * to save or reopen a file from Downloads, but Android still owns the final update confirmation.
  */
 @Composable
-fun UpdateCard(status: UpdateStatus, onCheck: () -> Unit, modifier: Modifier = Modifier) {
+fun UpdateCard(
+    status: UpdateStatus,
+    onCheck: () -> Unit,
+    onInstall: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
+    val installPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+        onResult = { onInstall() },
+    )
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -96,19 +104,63 @@ fun UpdateCard(status: UpdateStatus, onCheck: () -> Unit, modifier: Modifier = M
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        text = "Lataa ja avaa tiedosto — Android kysyy luvan päivitykseen. " +
-                            "Leimaushistoria ja asetukset säilyvät.",
+                        text = "Sovellus lataa päivityksen ja avaa Androidin asennusvahvistuksen " +
+                            "automaattisesti. Leimaushistoria ja asetukset säilyvät.",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Button(
                         onClick = {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, status.apkUrl.toUri())
-                            )
+                            if (
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                !context.packageManager.canRequestPackageInstalls()
+                            ) {
+                                // Preserve the selected release before leaving for system settings;
+                                // SettingsScreen performs its normal update check again on resume.
+                                onInstall()
+                                installPermissionLauncher.launch(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        "package:${context.packageName}".toUri(),
+                                    )
+                                )
+                            } else {
+                                onInstall()
+                            }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Lataa päivitys")
+                        Text("Lataa ja asenna päivitys")
+                    }
+                }
+
+                is UpdateStatus.Downloading -> {
+                    Text(
+                        text = "Ladataan versiota ${status.versionName}: " +
+                            "${status.progressPercent} %",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    LinearProgressIndicator(
+                        progress = { status.progressPercent / 100f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        text = "Voit jatkaa sovelluksen käyttöä latauksen aikana.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+
+                is UpdateStatus.AwaitingInstallConfirmation -> {
+                    Text(
+                        text = "Versio ${status.versionName} on ladattu ja tarkistettu.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Odotetaan Androidin asennusvahvistusta…",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
 

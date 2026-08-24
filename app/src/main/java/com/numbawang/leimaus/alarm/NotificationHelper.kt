@@ -10,7 +10,6 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
-import androidx.core.net.toUri
 import com.numbawang.leimaus.MainActivity
 
 class NotificationHelper(private val context: Context) {
@@ -95,14 +94,11 @@ class NotificationHelper(private val context: Context) {
         }
     }
 
-    /**
-     * Tapping this opens the APK URL in the browser and hands off to Android's own installer, the
-     * same route the Settings card takes — see [com.numbawang.leimaus.ui.components.UpdateCard]
-     * for why the download is not performed in-app.
-     */
-    fun showUpdateAvailableNotification(versionName: String, sizeMb: Int, apkUrl: String) {
-        val downloadIntent = Intent(Intent.ACTION_VIEW, apkUrl.toUri()).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    /** Opens the in-app updater; the APK is no longer handed to a browser or Downloads. */
+    fun showUpdateAvailableNotification(versionName: String, sizeMb: Int) {
+        val downloadIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_OPEN_UPDATE, true)
         }
         val downloadPendingIntent = PendingIntent.getActivity(
             context,
@@ -332,6 +328,7 @@ class NotificationHelper(private val context: Context) {
     companion object {
         /** Extra on the content intent naming the punch to run when the body is tapped. */
         const val EXTRA_PUNCH_ACTION = "com.numbawang.leimaus.EXTRA_PUNCH_ACTION"
+        const val EXTRA_OPEN_UPDATE = "com.numbawang.leimaus.EXTRA_OPEN_UPDATE"
         const val CHANNEL_ID = "numbawang_notifications"
         const val UPDATE_CHANNEL_ID = "numbawang_updates"
         const val NOTIFICATION_ID = 8881
