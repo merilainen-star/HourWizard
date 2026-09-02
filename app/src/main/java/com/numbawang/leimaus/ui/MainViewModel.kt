@@ -6,9 +6,12 @@ import android.net.Uri
 import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.numbawang.leimaus.achievements.Achievement
+import com.numbawang.leimaus.achievements.AchievementRepository
 import com.numbawang.leimaus.alarm.AlarmScheduler
 import com.numbawang.leimaus.alarm.NotificationActionReceiver
 import com.numbawang.leimaus.alarm.NotificationHelper
+import com.numbawang.leimaus.data.db.AchievementEntity
 import com.numbawang.leimaus.data.db.AppDatabase
 import com.numbawang.leimaus.data.db.StampEntity
 import com.numbawang.leimaus.data.network.StampResult
@@ -28,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -41,6 +45,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val prefsRepository = UserPreferencesRepository(application)
     private val db = AppDatabase.getInstance(application)
     private val repository = TimecardRepository(prefsRepository, db.stampDao())
+    private val achievementRepository = AchievementRepository(db.achievementDao())
     private val alarmScheduler = AlarmScheduler(application)
     private val notificationHelper = NotificationHelper(application)
     private val apkUpdateInstaller = ApkUpdateInstaller(application)
@@ -82,6 +87,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val rawApiResponse: StateFlow<String> = repository.rawApiResponse.asStateFlow()
 
+    val unlockedAchievements: StateFlow<List<AchievementEntity>> = achievementRepository.unlocked
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    /** Achievements queued for the celebration banner, oldest-earned first; the banner shows
+     * only the head and [dismissAchievementPopup] pops it once it's been shown. */
+    private val _pendingAchievementPopups = MutableStateFlow<List<Achievement>>(emptyList())
+    val achievementPopup: StateFlow<Achievement?> = _pendingAchievementPopups
+        .map { it.firstOrNull() }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = null)
+
     init {
         // Schedule alarms on launch
         val currentSettings = prefsRepository.loadSettings()
@@ -92,6 +111,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Fetch latest server balance on launch
         refreshServerBalance()
+
+        // Silently persist whatever the existing punch history already qualifies for, so
+        // upgrading to this feature doesn't fire a flood of celebration banners for the past.
+        checkAchievements(announce = false)
 
         // Live balance ticker loop when clocked in
         viewModelScope.launch {
@@ -135,6 +158,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             _uiMessage.value = UiMessage(text, isError)
         }
+    }
+
+    /**
+     * Re-evaluates every achievement against the full punch history and persists any that newly
+     * qualify. Queues them for the celebration banner unless [announce] is false (used for the
+     * one-time silent backfill on launch, so pre-existing history doesn't spam banners).
+     */
+    private fun checkAchievements(announce: Boolean = true) {
+        viewModelScope.launch {
+            val newlyUnlocked = achievementRepository.checkForNewUnlocks(
+                db.stampDao().getAllLogsList(),
+                prefsRepository.settings.value
+            )
+            if (announce && newlyUnlocked.isNotEmpty()) {
+                _pendingAchievementPopups.value = _pendingAchievementPopups.value + newlyUnlocked
+            }
+        }
+    }
+
+    /** Dismisses the achievement currently shown in the celebration banner, revealing the next
+     * queued one (if any). */
+    fun dismissAchievementPopup() {
+        _pendingAchievementPopups.value = _pendingAchievementPopups.value.drop(1)
     }
 
     /**
@@ -255,6 +301,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // evening alarm would otherwise start the ticker
                     alarmScheduler.scheduleEveningTicker()
                     emitResult(result.message, isError = false, asToast = asToast)
+                    checkAchievements()
                 }
                 is StampResult.Error -> {
                     emitResult(friendlyErrorMessage(result.errorMessage), isError = true, asToast = asToast)
@@ -274,6 +321,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     notificationHelper.cancelNotification()
                     alarmScheduler.cancelEveningTicker()
                     emitResult(result.message, isError = false, asToast = asToast)
+                    checkAchievements()
                 }
                 is StampResult.Error -> {
                     emitResult(friendlyErrorMessage(result.errorMessage), isError = true, asToast = asToast)
@@ -291,6 +339,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             when (result) {
                 is StampResult.Success -> {
                     _uiMessage.value = UiMessage(result.message, isError = false)
+                    checkAchievements()
                 }
                 is StampResult.Error -> {
                     handleGlobalError(result.errorMessage)
@@ -308,6 +357,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             when (result) {
                 is StampResult.Success -> {
                     _uiMessage.value = UiMessage(result.message, isError = false)
+                    checkAchievements()
                 }
                 is StampResult.Error -> {
                     handleGlobalError(result.errorMessage)

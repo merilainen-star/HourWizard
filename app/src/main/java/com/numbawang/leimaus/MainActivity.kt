@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -42,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -49,9 +51,11 @@ import androidx.core.content.ContextCompat
 import com.numbawang.leimaus.alarm.NotificationHelper
 import com.numbawang.leimaus.data.update.ApkUpdateInstaller
 import com.numbawang.leimaus.ui.MainViewModel
+import com.numbawang.leimaus.ui.screens.AchievementsScreen
 import com.numbawang.leimaus.ui.screens.HistoryScreen
 import com.numbawang.leimaus.ui.screens.HomeScreen
 import com.numbawang.leimaus.ui.screens.SettingsScreen
+import com.numbawang.leimaus.ui.components.AchievementUnlockedBanner
 import com.numbawang.leimaus.ui.components.QuickPunchBottomBar
 import com.numbawang.leimaus.ui.theme.MyApplicationTheme
 
@@ -240,6 +244,12 @@ class MainActivity : ComponentActivity() {
                                 containerColor = MaterialTheme.colorScheme.surface
                             ),
                             actions = {
+                                IconButton(onClick = { selectedTab = 3 }) {
+                                    Icon(
+                                        imageVector = Icons.Default.EmojiEvents,
+                                        contentDescription = "Saavutukset"
+                                    )
+                                }
                                 IconButton(onClick = { selectedTab = 2 }) {
                                     Icon(
                                         imageVector = Icons.Default.History,
@@ -280,7 +290,17 @@ class MainActivity : ComponentActivity() {
                             2 -> HistoryScreen(
                                 viewModel = viewModel
                             )
+                            3 -> AchievementsScreen(
+                                viewModel = viewModel
+                            )
                         }
+
+                        val achievementPopup by viewModel.achievementPopup.collectAsState()
+                        AchievementUnlockedBanner(
+                            achievement = achievementPopup,
+                            onDismiss = { viewModel.dismissAchievementPopup() },
+                            modifier = Modifier.align(Alignment.TopCenter)
+                        )
                     }
                 }
             }
