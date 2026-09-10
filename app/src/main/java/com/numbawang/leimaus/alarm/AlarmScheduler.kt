@@ -14,6 +14,36 @@ class AlarmScheduler(private val context: Context) {
     fun scheduleAlarms(morningTimeStr: String, eveningTimeStr: String) {
         scheduleSingleAlarm(morningTimeStr, EXTRA_TYPE_MORNING, REQ_CODE_MORNING)
         scheduleSingleAlarm(eveningTimeStr, EXTRA_TYPE_EVENING, REQ_CODE_EVENING)
+        scheduleApprovalReminder()
+    }
+
+    fun scheduleApprovalReminder() {
+        val now = System.currentTimeMillis()
+        val saved = context.getSharedPreferences("approval_reminders", Context.MODE_PRIVATE)
+        val pendingDue = saved.getLong("pending_due", 0)
+        val pendingMonth = saved.getString("pending_month", null)
+        // Do not replace a due but delayed alarm with next month's when another alarm or an
+        // app launch reschedules reminders. Recover short outages without replaying old months.
+        val overdue = pendingMonth != null && pendingDue > 0 && pendingDue <= now && now - pendingDue < 7 * 86_400_000L &&
+            pendingMonth != saved.getString("last_posted_month", null)
+        val due = if (overdue) pendingDue else com.numbawang.leimaus.approval.ApprovalCalendar.nextReminder(now)
+        val month = if (overdue) pendingMonth else com.numbawang.leimaus.approval.ApprovalCalendar.previousMonth(due)
+        val trigger = if (overdue) now + 1000 else due
+        saved.edit().putLong("pending_due", due).putString("pending_month", month).apply()
+        val intent = Intent(context, ApprovalReminderReceiver::class.java).apply {
+            putExtra(NotificationHelper.EXTRA_APPROVAL_MONTH, month)
+        }
+        val pending = PendingIntent.getBroadcast(context, 1004, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        try {
+            if (canScheduleExactAlarms()) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pending)
+            } else {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pending)
+            }
+        } catch (_: SecurityException) {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pending)
+        }
     }
 
     fun canScheduleExactAlarms(): Boolean {

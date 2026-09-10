@@ -160,6 +160,45 @@ class TimecardRepository(
 
     suspend fun clockIn(): StampResult = executePunch("in")
 
+    private var approvalEndpoint: String? = null
+
+    /** Approval writes are never retried or redirected after an uncertain network outcome. */
+    suspend fun approvalRequest(payload: String, mutation: Boolean): String = withContext(Dispatchers.IO) {
+        val settings = prefsRepository.settings.value
+        check(!settings.isDemoMode) { "Tuntien hyväksyntä ei ole käytössä demotilassa." }
+        check(settings.username.isNotBlank() && prefsRepository.getPassword().isNotBlank()) {
+            "Syötä tunnukset asetuksissa."
+        }
+        if (!mutation) {
+            val result = login(settings.username, prefsRepository.getPassword())
+            check(result is StampResult.Success) { (result as StampResult.Error).errorMessage }
+        }
+        val token = prefsRepository.getAuthToken()
+        check(token.isNotBlank()) { "Kirjaudu uudelleen." }
+        val urls = if (mutation) listOf(checkNotNull(approvalEndpoint) { "Päivitä jakson tiedot." })
+            else buildCandidateUrls(formatBaseUrl(settings.serverUrl))
+        val approvalClient = client.newBuilder().retryOnConnectionFailure(false)
+            .followRedirects(false).followSslRedirects(false).build()
+        var lastError: IOException? = null
+        for ((index, url) in urls.withIndex()) {
+            try {
+                val request = Request.Builder().url(url).addHeaders(token)
+                    .post(payload.toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+                approvalClient.newCall(request).execute().use { response ->
+                    if (!mutation && response.code == 404 && index < urls.lastIndex) return@use
+                    check(response.isSuccessful) { "Palvelinvirhe HTTP ${response.code}. Päivitä tiedot." }
+                    val body = response.body?.string() ?: error("Palvelimen vastaus puuttuu.")
+                    if (!mutation) approvalEndpoint = url
+                    return@withContext body
+                }
+            } catch (e: IOException) {
+                if (mutation) throw IOException("Hyväksynnän tulos jäi epäselväksi. Päivitä tiedot ennen uutta yritystä.", e)
+                lastError = e
+            }
+        }
+        throw IOException("Jakson haku epäonnistui. Tarkista verkkoyhteys.", lastError)
+    }
+
     suspend fun clockOut(): StampResult = executePunch("out")
 
     suspend fun breakStart(): StampResult = executePunch("break_start")

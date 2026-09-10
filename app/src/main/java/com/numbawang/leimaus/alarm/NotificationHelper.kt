@@ -68,6 +68,9 @@ class NotificationHelper(private val context: Context) {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            notificationManager.createNotificationChannel(NotificationChannel(
+                APPROVAL_CHANNEL_ID, "Tuntien hyväksyntä", NotificationManager.IMPORTANCE_DEFAULT
+            ).apply { description = "Kuukauden ensimmäisen työpäivän muistutus klo 14.00" })
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Tuntivelho Ilmoitukset",
@@ -92,6 +95,24 @@ class NotificationHelper(private val context: Context) {
             }
             notificationManager.createNotificationChannel(updateChannel)
         }
+    }
+
+    fun showApprovalNotification(month: String) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            action = "com.numbawang.leimaus.OPEN_APPROVAL"
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_APPROVAL_MONTH, month)
+        }
+        val pending = PendingIntent.getActivity(context, 701, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notification = NotificationCompat.Builder(context, APPROVAL_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_agenda)
+            .setContentTitle("Hyväksy tunnit")
+            .setContentText("Tarkista päättyneen kuukauden $month tunnit.")
+            .setContentIntent(pending).setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER).build()
+        try { notificationManager.notify(NOTIFICATION_APPROVAL_ID, notification) }
+        catch (_: SecurityException) { /* User has not granted notifications. */ }
     }
 
     /** Opens the in-app updater; the APK is no longer handed to a browser or Downloads. */
@@ -326,6 +347,9 @@ class NotificationHelper(private val context: Context) {
     }
 
     companion object {
+        const val EXTRA_APPROVAL_MONTH = "com.numbawang.leimaus.APPROVAL_MONTH"
+        const val APPROVAL_CHANNEL_ID = "numbawang_approval"
+        const val NOTIFICATION_APPROVAL_ID = 8884
         /** Extra on the content intent naming the punch to run when the body is tapped. */
         const val EXTRA_PUNCH_ACTION = "com.numbawang.leimaus.EXTRA_PUNCH_ACTION"
         const val EXTRA_OPEN_UPDATE = "com.numbawang.leimaus.EXTRA_OPEN_UPDATE"

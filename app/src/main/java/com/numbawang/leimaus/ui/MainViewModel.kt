@@ -45,6 +45,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val prefsRepository = UserPreferencesRepository(application)
     private val db = AppDatabase.getInstance(application)
     private val repository = TimecardRepository(prefsRepository, db.stampDao())
+    val approval = com.numbawang.leimaus.approval.ApprovalController(
+        com.numbawang.leimaus.approval.ApprovalRepository(repository::approvalRequest), viewModelScope)
     private val achievementRepository = AchievementRepository(db.achievementDao())
     private val alarmScheduler = AlarmScheduler(application)
     private val notificationHelper = NotificationHelper(application)

@@ -142,6 +142,7 @@ fun calculateWeeklyWorkedMinutes(
 fun HomeScreen(
     viewModel: MainViewModel,
     onNavigateToSettings: () -> Unit,
+    onNavigateToApproval: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -179,6 +180,9 @@ fun HomeScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        OutlinedButton(onClick = onNavigateToApproval, modifier = Modifier.fillMaxWidth()) {
+            Text("Hyväksy edellisen kuukauden tunnit")
+        }
         // Welcome & Status Banner Card
         Card(
             modifier = Modifier

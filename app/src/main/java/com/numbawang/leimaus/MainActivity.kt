@@ -64,10 +64,16 @@ class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
     private var requestedTab by mutableIntStateOf(-1)
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("approval_month", viewModel.approval.state.value.month)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         if (handleUpdateInstallStatusIntent(intent)) return
+        if (handleApprovalIntent(intent)) return
         handleOpenUpdateIntent(intent)
         handleSharedLocationIntent(intent)
         handlePunchIntent(intent)
@@ -78,6 +84,16 @@ class MainActivity : ComponentActivity() {
             intent.removeExtra(NotificationHelper.EXTRA_OPEN_UPDATE)
             requestedTab = 1
         }
+    }
+
+    private fun handleApprovalIntent(intent: Intent?): Boolean {
+        val month = intent?.getStringExtra(NotificationHelper.EXTRA_APPROVAL_MONTH) ?: return false
+        // Consume both extras defensively: opening this view can never trigger a punch or approval.
+        intent.removeExtra(NotificationHelper.EXTRA_APPROVAL_MONTH)
+        intent.removeExtra(NotificationHelper.EXTRA_PUNCH_ACTION)
+        viewModel.approval.open(month)
+        requestedTab = 4
+        return true
     }
 
     /** Handles the sanitized failure callback forwarded by the private install receiver. */
@@ -152,7 +168,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val handledUpdateStatus =
             savedInstanceState == null && handleUpdateInstallStatusIntent(intent)
-        if (!handledUpdateStatus) {
+        if (!handledUpdateStatus && !handleApprovalIntent(intent)) {
             handleOpenUpdateIntent(intent)
             handleSharedLocationIntent(intent)
             if (savedInstanceState == null) handlePunchIntent(intent)
@@ -162,7 +178,7 @@ class MainActivity : ComponentActivity() {
             val settings by viewModel.settings.collectAsState()
             MyApplicationTheme(appTheme = settings.appTheme) {
                 val context = LocalContext.current
-                var selectedTab by remember { mutableIntStateOf(0) }
+                var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
                 val snackbarHostState = remember { SnackbarHostState() }
 
                 LaunchedEffect(requestedTab) {
@@ -273,7 +289,7 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     bottomBar = {
-                        QuickPunchBottomBar(viewModel = viewModel)
+                        if (selectedTab != 4) QuickPunchBottomBar(viewModel = viewModel)
                     },
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                     modifier = Modifier.fillMaxSize()
@@ -282,7 +298,11 @@ class MainActivity : ComponentActivity() {
                         when (selectedTab) {
                             0 -> HomeScreen(
                                 viewModel = viewModel,
-                                onNavigateToSettings = { selectedTab = 1 }
+                                onNavigateToSettings = { selectedTab = 1 },
+                                onNavigateToApproval = {
+                                    viewModel.approval.open()
+                                    selectedTab = 4
+                                }
                             )
                             1 -> SettingsScreen(
                                 viewModel = viewModel
@@ -293,6 +313,17 @@ class MainActivity : ComponentActivity() {
                             3 -> AchievementsScreen(
                                 viewModel = viewModel
                             )
+                            4 -> {
+                                val approvalState by viewModel.approval.state.collectAsState()
+                                androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                                    if (approvalState.month.isBlank()) {
+                                        viewModel.approval.open(savedInstanceState?.getString("approval_month")
+                                            ?.takeIf { it.isNotBlank() } ?: com.numbawang.leimaus.approval.ApprovalCalendar.previousMonth())
+                                    } else viewModel.approval.refresh()
+                                }
+                                com.numbawang.leimaus.ui.screens.ApprovalScreen(approvalState,
+                                    viewModel.approval::refresh, viewModel.approval::select, viewModel.approval::approve)
+                            }
                         }
 
                         val achievementPopup by viewModel.achievementPopup.collectAsState()
