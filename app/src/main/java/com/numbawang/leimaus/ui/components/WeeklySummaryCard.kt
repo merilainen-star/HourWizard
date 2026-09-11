@@ -124,7 +124,8 @@ fun calculateDailyWorkedMinutes(
 fun WeeklySummaryCard(
     settings: AppSettings,
     logs: List<StampEntity>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    now: Long = System.currentTimeMillis()
 ) {
     val enabledDaysSet = settings.enabledDaysString.split(",")
         .mapNotNull { it.trim().toIntOrNull() }
@@ -135,7 +136,7 @@ fun WeeklySummaryCard(
     if (enabledDaysSet.contains(6)) daysToShow.add(6)
     if (enabledDaysSet.contains(7)) daysToShow.add(7)
 
-    val currentSessionMinutes = settings.workedMinutesSinceClockIn(System.currentTimeMillis())
+    val currentSessionMinutes = settings.workedMinutesSinceClockIn(now)
     val dailyMinutes = calculateDailyWorkedMinutes(logs, currentSessionMinutes, settings.lunchBreakMinutes)
     
     val targetDailyMinutes = (settings.workdayHours * 60) + settings.workdayMinutes

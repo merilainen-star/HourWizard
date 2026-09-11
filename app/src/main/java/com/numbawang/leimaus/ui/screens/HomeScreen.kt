@@ -1,6 +1,7 @@
 package com.numbawang.leimaus.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +68,8 @@ import com.numbawang.leimaus.data.db.StampEntity
 import com.numbawang.leimaus.data.preferences.AppSettings
 import com.numbawang.leimaus.ui.MainViewModel
 import com.numbawang.leimaus.ui.components.WeeklySummaryCard
+import com.numbawang.leimaus.ui.components.calculateDailyWorkedMinutes
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -158,7 +162,31 @@ fun HomeScreen(
         onPauseOrDispose { viewModel.approvalEntry.invalidate() }
     }
 
-    val currentSessionMinutes = settings.workedMinutesSinceClockIn(System.currentTimeMillis())
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+    val currentSessionMinutes = settings.workedMinutesSinceClockIn(now)
+    val today = Calendar.getInstance(TimeZone.getTimeZone("Europe/Helsinki")).apply {
+        timeInMillis = now
+    }.get(Calendar.DAY_OF_WEEK).let { (it + 5) % 7 + 1 }
+    val dailyWorkedMinutes = calculateDailyWorkedMinutes(
+        logs, currentSessionMinutes, settings.lunchBreakMinutes
+    )[today] ?: 0
+    val dailyTargetMinutes = (settings.targetHoursDaily * 60).toInt()
+    val dailyFraction = if (dailyTargetMinutes > 0) {
+        dailyWorkedMinutes.toFloat() / dailyTargetMinutes
+    } else 0f
+    val dailyPercent = (dailyFraction * 100).toInt()
+    val animatedDailyProgress by animateFloatAsState(
+        targetValue = dailyFraction.coerceIn(0f, 1f),
+        label = "dailyProgress"
+    )
+    val dailyReached = dailyTargetMinutes > 0 && dailyWorkedMinutes >= dailyTargetMinutes
+    val dailyColor = if (dailyReached) Color(0xFF34D399) else Color(0xFFF87171)
 
     val isWeekly = settings.targetMode == "WEEKLY"
     val targetGoalHours = if (isWeekly) settings.targetHoursWeekly else settings.targetHoursDaily
@@ -170,7 +198,7 @@ fun HomeScreen(
         currentSessionMinutes
     }
 
-    val progressFraction = if (targetMinsTotal > 0) (workedMinsTotal.toFloat() / targetMinsTotal.toFloat()).coerceIn(0f, 1f) else 0f
+    val progressFraction = if (targetMinsTotal > 0) workedMinsTotal.toFloat() / targetMinsTotal.toFloat() else 0f
     val percentInt = (progressFraction * 100).toInt()
     val isTargetReached = targetMinsTotal > 0 && workedMinsTotal >= targetMinsTotal
 
@@ -342,9 +370,40 @@ fun HomeScreen(
                                 )
                             }
                         }
-                    } else {
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Column(
+                        modifier = Modifier.fillMaxWidth().testTag("daily_target_progress"),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Päivän eteneminen",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "$dailyPercent %",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = dailyColor
+                            )
+                        }
+                        LinearProgressIndicator(
+                            progress = { animatedDailyProgress },
+                            modifier = Modifier.fillMaxWidth().height(12.dp)
+                                .clip(RoundedCornerShape(6.dp)),
+                            color = dailyColor,
+                            trackColor = Color.White.copy(alpha = 0.2f)
+                        )
                         Text(
-                            text = "Muistutukset: Aamu ${settings.morningReminderTime} • Ilta ${settings.eveningReminderTime}",
+                            text = "${dailyWorkedMinutes / 60}h ${dailyWorkedMinutes % 60}min / " +
+                                "${dailyTargetMinutes / 60}h ${dailyTargetMinutes % 60}min",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.85f)
                         )
@@ -355,138 +414,139 @@ fun HomeScreen(
 
         WeeklySummaryCard(
             settings = settings,
-            logs = logs
+            logs = logs,
+            now = now
         )
 
-        // Target Hours & Progress Bar Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("target_progress_card"),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+        // The daily goal is in the status banner; retain the optional weekly goal.
+        if (isWeekly) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("target_progress_card"),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(if (isTargetReached) Color(0xFFD1FAE5) else MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isTargetReached) Color(0xFFD1FAE5) else MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Flag,
+                                    contentDescription = null,
+                                    tint = if (isTargetReached) Color(0xFF059669) else MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = if (isWeekly) "Viikkotavoitteen kertymä" else "Päivätavoitteen kertymä",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                val workedHrs = workedMinsTotal / 60
+                                val workedMins = workedMinsTotal % 60
+                                val targetHrs = targetMinsTotal / 60
+                                val targetMins = targetMinsTotal % 60
+                                Text(
+                                    text = "${workedHrs}h ${workedMins}min / ${targetHrs}h ${targetMins}min",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isTargetReached) Color(0xFF059669) else MaterialTheme.colorScheme.primaryContainer
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Flag,
-                                contentDescription = null,
-                                tint = if (isTargetReached) Color(0xFF059669) else MaterialTheme.colorScheme.primary
+                            Text(
+                                text = "$percentInt %",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isTargetReached) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
+                    }
+
+                    // Smooth Progress Bar
+                    LinearProgressIndicator(
+                        progress = { progressFraction.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(12.dp)
+                            .clip(RoundedCornerShape(6.dp)),
+                        color = if (isTargetReached) Color(0xFF059669) else Color(0xFFDC2626),
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        if (isTargetReached) {
+                            val overMins = workedMinsTotal - targetMinsTotal
+                            val overHrs = overMins / 60
+                            val overRestMins = overMins % 60
                             Text(
-                                text = if (isWeekly) "Viikkotavoitteen kertymä" else "Päivätavoitteen kertymä",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
+                                text = "🎉 Tavoite täynnä! Plussalla: +${overHrs}h ${overRestMins}min",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF059669)
                             )
-                            val workedHrs = workedMinsTotal / 60
-                            val workedMins = workedMinsTotal % 60
-                            val targetHrs = targetMinsTotal / 60
-                            val targetMins = targetMinsTotal % 60
+                        } else {
+                            val remMins = targetMinsTotal - workedMinsTotal
+                            val remHrs = remMins / 60
+                            val remRestMins = remMins % 60
                             Text(
-                                text = "${workedHrs}h ${workedMins}min / ${targetHrs}h ${targetMins}min",
+                                text = "Aikaa tavoitteeseen: ${remHrs}h ${remRestMins}min",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
 
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isTargetReached) Color(0xFF059669) else MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = "$percentInt %",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isTargetReached) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-
-                // Smooth Progress Bar
-                LinearProgressIndicator(
-                    progress = { progressFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(12.dp)
-                        .clip(RoundedCornerShape(6.dp)),
-                    color = if (isTargetReached) Color(0xFF059669) else MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    if (isTargetReached) {
-                        val overMins = workedMinsTotal - targetMinsTotal
-                        val overHrs = overMins / 60
-                        val overRestMins = overMins % 60
-                        Text(
-                            text = "🎉 Tavoite täynnä! Plussalla: +${overHrs}h ${overRestMins}min",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF059669)
-                        )
-                    } else {
-                        val remMins = targetMinsTotal - workedMinsTotal
-                        val remHrs = remMins / 60
-                        val remRestMins = remMins % 60
-                        Text(
-                            text = "Aikaa tavoitteeseen: ${remHrs}h ${remRestMins}min",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (settings.targetSoundAlertEnabled) {
-                            Icon(
-                                imageVector = Icons.Default.VolumeUp,
-                                contentDescription = "Äänimerkki päällä",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (settings.targetVibrationAlertEnabled) {
-                            Icon(
-                                imageVector = Icons.Default.Vibration,
-                                contentDescription = "Värinähälytys päällä",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (settings.targetSoundAlertEnabled) {
+                                Icon(
+                                    imageVector = Icons.Default.VolumeUp,
+                                    contentDescription = "Äänimerkki päällä",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            if (settings.targetVibrationAlertEnabled) {
+                                Icon(
+                                    imageVector = Icons.Default.Vibration,
+                                    contentDescription = "Värinähälytys päällä",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-
-
 
         if (settings.username.isBlank()) {
             Card(
