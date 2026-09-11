@@ -13,8 +13,15 @@ data class GraphQLResponse(
 data class GraphQLDataPayload(
     @Json(name = "login") val login: LoginPayload? = null,
     @Json(name = "kellokortti") val kellokortti: KellokorttiPayload? = null,
-    @Json(name = "leimaTallenna") val leimaTallenna: LeimaTallennaPayload? = null
+    @Json(name = "leimaTallenna") val leimaTallenna: LeimaTallennaPayload? = null,
+    val tyovuoroAdd: ManualShiftPayload? = null
 )
+
+@JsonClass(generateAdapter = true)
+data class ManualShiftPayload(val tyovuoro: SavedWorkshift? = null, val errors: List<GraphQLError>? = null)
+
+@JsonClass(generateAdapter = true)
+data class SavedWorkshift(val id: String? = null, val alku: Long? = null, val loppu: Long? = null)
 
 @JsonClass(generateAdapter = true)
 data class LoginPayload(

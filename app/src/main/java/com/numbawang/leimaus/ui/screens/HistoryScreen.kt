@@ -67,6 +67,12 @@ fun HistoryScreen(
 
     var selectedLogForDebug by remember { mutableStateOf<StampEntity?>(null) }
     var showServerDebugDialog by remember { mutableStateOf(false) }
+    var showManualShift by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val loading by viewModel.isLoading.collectAsState()
+
+    if (showManualShift) {
+        com.numbawang.leimaus.ui.components.ManualShiftDialog(viewModel) { showManualShift = false }
+    }
 
     Column(
         modifier = modifier
@@ -125,6 +131,12 @@ fun HistoryScreen(
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             // Tuntitase Kertymäkäyrä
+            item(key = "manual_shift") {
+                Button(onClick = { showManualShift = true }, enabled = !loading,
+                    modifier = Modifier.fillMaxWidth().testTag("add_manual_shift")) {
+                    Text("Lisää unohtunut työvuoro")
+                }
+            }
             item(key = "balance_chart") {
                 BalanceChartCard(logs = logs, settings = settings)
             }

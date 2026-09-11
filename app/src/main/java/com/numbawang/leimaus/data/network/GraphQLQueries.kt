@@ -1,6 +1,20 @@
 package com.numbawang.leimaus.data.network
 
 object GraphQLQueries {
+    // Verified from Finago Mobiili main.9577daff7ecc85670913.js, 2026-09-11.
+    // tot = actual workshift. This does not change the live clock-card direction.
+    const val ADD_MANUAL_SHIFT = """
+        mutation tyovuoroAdd(${'$'}tyyppi: TyovuoroEnumType!, ${'$'}tyopisteid: Int!,
+          ${'$'}talaatuid: Int!, ${'$'}alku: Int!, ${'$'}loppu: Int!,
+          ${'$'}taukokesto: Int, ${'$'}tietoja: String) {
+          tyovuoroAdd(tyyppi: ${'$'}tyyppi, tyopisteid: ${'$'}tyopisteid,
+            talaatuid: ${'$'}talaatuid, alku: ${'$'}alku, loppu: ${'$'}loppu,
+            taukokesto: ${'$'}taukokesto, tietoja: ${'$'}tietoja) {
+            tyovuoro { id alku loppu }
+            errors { message }
+          }
+        }
+    """
     
     // LOGIN_MUTATION
     const val LOGIN_MUTATION = """

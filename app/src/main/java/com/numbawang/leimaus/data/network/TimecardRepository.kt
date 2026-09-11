@@ -214,6 +214,92 @@ class TimecardRepository(
 
     suspend fun breakEnd(): StampResult = executePunch("break_end")
 
+    suspend fun addManualShift(shift: ManualShift): StampResult = withContext(Dispatchers.IO) {
+        val settings = prefsRepository.settings.value
+        if (shift.endMillis > System.currentTimeMillis() || shift.endMillis <= shift.startMillis) {
+            return@withContext StampResult.Error("Tarkista työvuoron ajat.")
+        }
+        val logMessage = "${if (settings.isDemoMode) "Demotila – " else ""}Jälkikirjaus: ${shift.description}"
+        if (stampDao.getAllLogsList().any {
+            it.isSuccess && it.actionType == "TYÖVUORO" &&
+                it.message.substringBefore(", tauko") == logMessage.substringBefore(", tauko")
+        }) return@withContext StampResult.Error("Tämä työvuoro on jo tallennettu sovelluksesta.")
+
+        var confirmation = "DEMOTILA: Työvuoro tallennettu vain paikallisesti."
+        if (!settings.isDemoMode) {
+            val login = login(settings.username, prefsRepository.getPassword())
+            if (login is StampResult.Error) return@withContext login
+            val token = prefsRepository.getAuthToken()
+            var selectedUrl: String? = null
+            var selectedDefaults: SelectionDefaults? = null
+            for (url in buildCandidateUrls(formatBaseUrl(settings.serverUrl))) {
+                // Resolve a working endpoint using a read, before sending the one write.
+                val (code, defaultsBody) = try {
+                    executeGraphQLCall(url, token, GraphQLQueries.buildKellokorttiDefaultsPayload())
+                } catch (_: IOException) { continue }
+                if (code == 404) continue
+                if (code !in 200..299) return@withContext StampResult.Error("Työvuoron tietojen haku epäonnistui (HTTP $code).")
+                val defaultsResult = parseGraphQLResponse(defaultsBody)
+                if (!defaultsResult?.errors.isNullOrEmpty()) {
+                    return@withContext StampResult.Error(defaultsResult?.errors.orEmpty().joinToString("; ") { it.message })
+                }
+                val defaults = defaultsResult?.data?.kellokortti?.selectiondefaults
+                if (defaults?.talaatuid != null && defaults.tyopisteid != null) {
+                    selectedUrl = url
+                    selectedDefaults = defaults
+                    break
+                }
+            }
+            if (selectedUrl == null || selectedDefaults == null) {
+                return@withContext StampResult.Error("Työpisteen ja työn laadun haku epäonnistui. Työvuoroa ei tallennettu.")
+            }
+            val variables = mapOf(
+                "tyyppi" to "tot", "tyopisteid" to selectedDefaults.tyopisteid,
+                "talaatuid" to selectedDefaults.talaatuid, "alku" to shift.startSeconds,
+                "loppu" to shift.endSeconds, "taukokesto" to shift.breakMinutes * 60,
+                "tietoja" to "Jälkikäteen kirjattu työvuoro"
+            )
+            val body = moshi.adapter(Any::class.java).toJson(listOf(
+                mapOf("query" to GraphQLQueries.ADD_MANUAL_SHIFT, "variables" to variables)
+            ))
+            val request = Request.Builder().url(selectedUrl).addHeaders(token)
+                .post(body.toRequestBody("application/json".toMediaType())).build()
+            try {
+                // A timeout may happen AFTER the write committed. Never retry a workshift POST.
+                val writeClient = client.newBuilder().retryOnConnectionFailure(false)
+                    .followRedirects(false).followSslRedirects(false).build()
+                writeClient.newCall(request).execute().use { response ->
+                    val responseBody = response.body?.string().orEmpty()
+                    rawApiResponse.value = responseBody
+                    val result = parseGraphQLResponse(responseBody)
+                    val errors = result?.data?.tyovuoroAdd?.errors.orEmpty() + result?.errors.orEmpty()
+                    if (errors.isNotEmpty()) return@withContext StampResult.Error(errors.joinToString("; ") { it.message })
+                    if (!response.isSuccessful || result?.data?.tyovuoroAdd?.tyovuoro?.id.isNullOrBlank()) {
+                        return@withContext StampResult.Error("Tallennusta ei voitu vahvistaa (HTTP ${response.code}). Tarkista vuoro Tuntivelhosta ennen uutta yritystä.")
+                    }
+                    confirmation = responseBody
+                }
+            } catch (e: IOException) {
+                return@withContext StampResult.Error("Yhteys katkesi. Tallennus on voinut onnistua. Tarkista vuoro Tuntivelhosta ennen uutta yritystä.")
+            }
+            // Only refresh the balance: do not alter today's active punch or break state.
+            try {
+                fetchBalance(selectedUrl, token)?.let { prefsRepository.saveServerBalance(formatTaseSeconds(it)) }
+            } catch (_: Exception) { /* The workshift is already saved. */ }
+        }
+        val formatted = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.ROOT).apply {
+            timeZone = TimeZone.getTimeZone("Europe/Helsinki")
+        }.format(Date(shift.startMillis))
+        try {
+            val workedMinutes = (shift.endSeconds - shift.startSeconds) / 60 - shift.breakMinutes
+            recordLog(shift.startMillis, formatted, "TYÖVUORO", true, logMessage,
+                rawDetails = "MANUAL_SHIFT_MINUTES=$workedMinutes\n$confirmation")
+        } catch (e: Exception) {
+            return@withContext StampResult.Success("Työvuoro tallennettiin, mutta paikallisen historian päivitys epäonnistui. Älä tallenna vuoroa uudelleen.")
+        }
+        StampResult.Success(if (settings.isDemoMode) confirmation else "Työvuoro tallennettu Tuntivelhoon: ${shift.description}")
+    }
+
     private suspend fun executePunch(type: String): StampResult = withContext(Dispatchers.IO) {
         val settings = prefsRepository.settings.value
         val password = prefsRepository.getPassword()

@@ -1,5 +1,12 @@
 # Release Notes
 
+## Unreleased
+
+- Add forgotten actual workshifts from History, with Finnish date/time validation,
+  unpaid breaks, overnight shifts, and weekly summary totals.
+- Use the separate workshift mutation so backfilling does not toggle the live punch
+  session. Show server errors and avoid automatic retries of uncertain writes.
+
 ## App Rename to Numbawang
 The app has been renamed from Tuntivelho to Numbawang to respect trademark guidelines.
 

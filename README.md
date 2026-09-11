@@ -6,6 +6,23 @@
 # Numbawang
 An unofficial Android/Termux client that punches in and out of the Tuntivelho timecard service.
 
+### Forgotten workshifts
+
+Open History and select **Lisää unohtunut työvuoro**. Enter the date, start and end
+times in Finnish time, and the unpaid break in minutes. Select the next-day option
+for an overnight shift. The app saves an actual workshift (`tyovuoroAdd`, `tot`)
+using your default workplace and work type, leaving the current punch state intact.
+The shift appears in local history and the weekly summary. Demo mode saves locally.
+
+Saving requires permission to add actual workshifts in Tuntivelho. Server errors
+remain visible in the form. If a connection drops after submission, check the
+service before trying again: a write may have succeeded without a response.
+
+The API request is derived from the public Finago Mobiili bundle
+`main.9577daff7ecc85670913.js` inspected on 2026-09-11. Authenticated production
+acceptance (including account-specific defaults and permissions) still needs a
+real forgotten shift; development tests never submit fabricated work records.
+
 ## Installation
 Clone the repository to `~/numbawang`.
 Run `./setup.sh` inside the directory.

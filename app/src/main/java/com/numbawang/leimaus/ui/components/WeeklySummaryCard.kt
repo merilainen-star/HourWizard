@@ -70,6 +70,13 @@ fun calculateDailyWorkedMinutes(
         }
         
         when {
+            log.actionType == "TYÖVUORO" -> {
+                val minutes = log.rawDetails.lineSequence().firstOrNull()
+                    ?.removePrefix("MANUAL_SHIFT_MINUTES=")?.toIntOrNull()
+                if (minutes != null && minutes in 1..1440) {
+                    dailyMinutes[dayIso] = (dailyMinutes[dayIso] ?: 0) + minutes
+                }
+            }
             log.actionType.contains("SISÄÄN", ignoreCase = true) -> {
                 lastInTs = log.timestamp
                 breakStartTs = null

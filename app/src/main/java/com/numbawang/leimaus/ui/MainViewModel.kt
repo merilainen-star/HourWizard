@@ -528,6 +528,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun addManualShift(shift: com.numbawang.leimaus.data.network.ManualShift,
+                       onResult: (UiMessage) -> Unit) {
+        if (_isLoading.value) return
+        _isLoading.value = true
+        viewModelScope.launch {
+            try {
+                val result = repository.addManualShift(shift)
+                val message = when (result) {
+                    is StampResult.Success -> UiMessage(result.message, false)
+                    is StampResult.Error -> UiMessage(result.errorMessage, true)
+                }
+                onResult(message)
+                if (!message.isError) _uiMessage.value = message
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onResult(UiMessage("Tallennusta ei voitu vahvistaa. Tarkista vuoro Tuntivelhosta ennen uutta yritystä.", true))
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     /** Downloads the APK into Android's private installer session and opens system confirmation. */
     fun installAvailableUpdate() {
         val available = (_updateStatus.value as? UpdateStatus.Available) ?: activeUpdate ?: return
