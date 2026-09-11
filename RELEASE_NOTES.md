@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Match native workshift entry by sending the authenticated employee, the work
+  quality's marker, and break-start defaults. Stop if identity or marker is missing.
+- Explain uncertain server-side Sentry errors while preserving their technical detail.
+
 - Add forgotten actual workshifts from History, with Finnish date/time validation,
   unpaid breaks, overnight shifts, and weekly summary totals.
 - Use the separate workshift mutation so backfilling does not toggle the live punch

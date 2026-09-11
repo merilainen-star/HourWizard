@@ -15,8 +15,22 @@ This is frontend-derived protocol evidence, **not an authenticated production te
   the editable start/end as wall-clock seconds. Its work calculation subtracts
   `taukokesto` from `loppu - alku`, so the break duration is also seconds.
 - The Android flow supplies the authenticated user's freshly fetched clock-card
-  defaults for workplace and work quality. It omits the optional employee argument
-  to target the current user. Account-specific acceptance needs production verification.
+  defaults for workplace and work quality. It fetches `userProfile.henkiloid` and
+  the matching `talaadut.defaultType`, verifies that the marker is in `tvmerkinnat`,
+  and explicitly sends both `henkiloid` and `tvmerkintaid`, as the native form does.
+  It also sends the native form's initial `taukoalku` (day's wall-clock midnight)
+  and `tyontekijalukumaara=1`. Missing identity or marker stops the write.
+  Account-specific acceptance still needs production verification.
+
+## Reported server error
+
+The first production attempt returned `Call to undefined method
+Sentry\\EventType::clientReport()`. This is a server-side error reporting failure;
+it does not establish the original cause or whether a write committed. The first
+Android request omitted the employee and shift marker supplied by the native form.
+Correcting that discrepancy is not proof that the Sentry problem is resolved.
+The app retains the technical error and asks the user to check existing workshifts
+before trying again. No test writes are sent to production.
 
 The mutation creates an actual workshift, unlike `leimaTallenna`, which changes
 the live clock-card direction. The Android feature must never implement a historical

@@ -231,34 +231,36 @@ class TimecardRepository(
             if (login is StampResult.Error) return@withContext login
             val token = prefsRepository.getAuthToken()
             var selectedUrl: String? = null
-            var selectedDefaults: SelectionDefaults? = null
+            var manualContext: GraphQLDataPayload? = null
+            val contextBody = moshi.adapter(Any::class.java).toJson(listOf(
+                mapOf("query" to GraphQLQueries.MANUAL_SHIFT_CONTEXT, "variables" to emptyMap<String, Any>())
+            ))
             for (url in buildCandidateUrls(formatBaseUrl(settings.serverUrl))) {
                 // Resolve a working endpoint using a read, before sending the one write.
                 val (code, defaultsBody) = try {
-                    executeGraphQLCall(url, token, GraphQLQueries.buildKellokorttiDefaultsPayload())
+                    executeGraphQLCall(url, token, contextBody)
                 } catch (_: IOException) { continue }
                 if (code == 404) continue
                 if (code !in 200..299) return@withContext StampResult.Error("Työvuoron tietojen haku epäonnistui (HTTP $code).")
                 val defaultsResult = parseGraphQLResponse(defaultsBody)
                 if (!defaultsResult?.errors.isNullOrEmpty()) {
-                    return@withContext StampResult.Error(defaultsResult?.errors.orEmpty().joinToString("; ") { it.message })
+                    return@withContext StampResult.Error(manualShiftError(defaultsResult?.errors.orEmpty().map { it.message }))
                 }
                 val defaults = defaultsResult?.data?.kellokortti?.selectiondefaults
                 if (defaults?.talaatuid != null && defaults.tyopisteid != null) {
                     selectedUrl = url
-                    selectedDefaults = defaults
+                    manualContext = defaultsResult?.data
                     break
                 }
             }
-            if (selectedUrl == null || selectedDefaults == null) {
+            if (selectedUrl == null || manualContext == null) {
                 return@withContext StampResult.Error("Työpisteen ja työn laadun haku epäonnistui. Työvuoroa ei tallennettu.")
             }
-            val variables = mapOf(
-                "tyyppi" to "tot", "tyopisteid" to selectedDefaults.tyopisteid,
-                "talaatuid" to selectedDefaults.talaatuid, "alku" to shift.startSeconds,
-                "loppu" to shift.endSeconds, "taukokesto" to shift.breakMinutes * 60,
-                "tietoja" to "Jälkikäteen kirjattu työvuoro"
-            )
+            val variables = try {
+                manualShiftVariables(shift, manualContext)
+            } catch (e: IllegalArgumentException) {
+                return@withContext StampResult.Error(e.message ?: "Työvuoron tiedot puuttuvat.")
+            }
             val body = moshi.adapter(Any::class.java).toJson(listOf(
                 mapOf("query" to GraphQLQueries.ADD_MANUAL_SHIFT, "variables" to variables)
             ))
@@ -273,7 +275,7 @@ class TimecardRepository(
                     rawApiResponse.value = responseBody
                     val result = parseGraphQLResponse(responseBody)
                     val errors = result?.data?.tyovuoroAdd?.errors.orEmpty() + result?.errors.orEmpty()
-                    if (errors.isNotEmpty()) return@withContext StampResult.Error(errors.joinToString("; ") { it.message })
+                    if (errors.isNotEmpty()) return@withContext StampResult.Error(manualShiftError(errors.map { it.message }))
                     if (!response.isSuccessful || result?.data?.tyovuoroAdd?.tyovuoro?.id.isNullOrBlank()) {
                         return@withContext StampResult.Error("Tallennusta ei voitu vahvistaa (HTTP ${response.code}). Tarkista vuoro Tuntivelhosta ennen uutta yritystä.")
                     }

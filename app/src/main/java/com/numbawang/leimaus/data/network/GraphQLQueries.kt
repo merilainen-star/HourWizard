@@ -1,15 +1,26 @@
 package com.numbawang.leimaus.data.network
 
 object GraphQLQueries {
+    const val MANUAL_SHIFT_CONTEXT = """
+        query manualShiftContext {
+          userProfile { henkiloid }
+          kellokortti(subuser: null) { selectiondefaults { talaatuid tyopisteid } }
+          talaadut { value defaultType }
+          tvmerkinnat { value }
+        }
+    """
     // Verified from Finago Mobiili main.9577daff7ecc85670913.js, 2026-09-11.
     // tot = actual workshift. This does not change the live clock-card direction.
     const val ADD_MANUAL_SHIFT = """
         mutation tyovuoroAdd(${'$'}tyyppi: TyovuoroEnumType!, ${'$'}tyopisteid: Int!,
           ${'$'}talaatuid: Int!, ${'$'}alku: Int!, ${'$'}loppu: Int!,
-          ${'$'}taukokesto: Int, ${'$'}tietoja: String) {
+          ${'$'}taukokesto: Int, ${'$'}tietoja: String, ${'$'}henkiloid: Int,
+          ${'$'}tvmerkintaid: Int, ${'$'}taukoalku: Int, ${'$'}tyontekijalukumaara: Int) {
           tyovuoroAdd(tyyppi: ${'$'}tyyppi, tyopisteid: ${'$'}tyopisteid,
             talaatuid: ${'$'}talaatuid, alku: ${'$'}alku, loppu: ${'$'}loppu,
-            taukokesto: ${'$'}taukokesto, tietoja: ${'$'}tietoja) {
+            taukokesto: ${'$'}taukokesto, tietoja: ${'$'}tietoja,
+            henkiloid: ${'$'}henkiloid, tvmerkintaid: ${'$'}tvmerkintaid,
+            taukoalku: ${'$'}taukoalku, tyontekijalukumaara: ${'$'}tyontekijalukumaara) {
             tyovuoro { id alku loppu }
             errors { message }
           }
