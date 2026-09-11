@@ -221,9 +221,9 @@ class TimecardRepository(
         }
         val logMessage = "${if (settings.isDemoMode) "Demotila – " else ""}Jälkikirjaus: ${shift.description}"
         if (stampDao.getAllLogsList().any {
-            it.isSuccess && it.actionType == "TYÖVUORO" &&
+            ((it.isSuccess && it.actionType == "TYÖVUORO") || it.actionType == "TARKISTA TYÖVUORO") &&
                 it.message.substringBefore(", tauko") == logMessage.substringBefore(", tauko")
-        }) return@withContext StampResult.Error("Tämä työvuoro on jo tallennettu sovelluksesta.")
+        }) return@withContext StampResult.Error("Tämä työvuoro on jo lähetetty sovelluksesta. Tarkista sen tila Tuntivelhon verkkopalvelusta.")
 
         var confirmation = "DEMOTILA: Työvuoro tallennettu vain paikallisesti."
         if (!settings.isDemoMode) {
@@ -256,14 +256,11 @@ class TimecardRepository(
             if (selectedUrl == null || manualContext == null) {
                 return@withContext StampResult.Error("Työpisteen ja työn laadun haku epäonnistui. Työvuoroa ei tallennettu.")
             }
-            val variables = try {
-                manualShiftVariables(shift, manualContext)
+            val body = try {
+                manualShiftPayload(shift, manualContext, moshi)
             } catch (e: IllegalArgumentException) {
                 return@withContext StampResult.Error(e.message ?: "Työvuoron tiedot puuttuvat.")
             }
-            val body = moshi.adapter(Any::class.java).toJson(listOf(
-                mapOf("query" to GraphQLQueries.ADD_MANUAL_SHIFT, "variables" to variables)
-            ))
             val request = Request.Builder().url(selectedUrl).addHeaders(token)
                 .post(body.toRequestBody("application/json".toMediaType())).build()
             try {
@@ -274,6 +271,13 @@ class TimecardRepository(
                     val responseBody = response.body?.string().orEmpty()
                     rawApiResponse.value = responseBody
                     val result = parseGraphQLResponse(responseBody)
+                    manualShiftReviewMessage(result)?.let { reviewMessage ->
+                        // Keep a durable guard even after the form closes or the app restarts.
+                        // This is not a confirmed shift and must not add hours to the summary.
+                        recordLog(shift.startMillis, shift.description, "TARKISTA TYÖVUORO", false,
+                            logMessage, rawDetails = "$reviewMessage\n$responseBody")
+                        return@withContext StampResult.Error(reviewMessage)
+                    }
                     val errors = result?.data?.tyovuoroAdd?.errors.orEmpty() + result?.errors.orEmpty()
                     if (errors.isNotEmpty()) return@withContext StampResult.Error(manualShiftError(errors.map { it.message }))
                     if (!response.isSuccessful || result?.data?.tyovuoroAdd?.tyovuoro?.id.isNullOrBlank()) {

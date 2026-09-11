@@ -24,6 +24,15 @@ This is frontend-derived protocol evidence, **not an authenticated production te
 
 ## Reported server error
 
+The next production response contained a workshift ID and interval together with
+`Undefined array key "toiveprioriteetti"`. The native form maps an unselected
+priority (`-1`) to null before submission. Android now includes that argument and
+serializes the variable explicitly as JSON null (Moshi's default would omit it).
+Responses containing both an ID and errors are recorded as `TARKISTA TYÖVUORO`,
+excluded from worked-hour totals, and block resubmission of the same local interval
+until the user checks the service. They are neither ordinary failures nor confirmed
+successes. Clearing local history also removes this local duplicate guard.
+
 The first production attempt returned `Call to undefined method
 Sentry\\EventType::clientReport()`. This is a server-side error reporting failure;
 it does not establish the original cause or whether a write committed. The first

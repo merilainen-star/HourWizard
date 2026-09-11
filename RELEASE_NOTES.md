@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Send unselected `toiveprioriteetti` explicitly as null, matching the native form.
+- Record workshift IDs returned with errors as requiring review, and prevent a
+  duplicate submission from the same local history without counting uncertain hours.
+
 - Match native workshift entry by sending the authenticated employee, the work
   quality's marker, and break-start defaults. Stop if identity or marker is missing.
 - Explain uncertain server-side Sentry errors while preserving their technical detail.

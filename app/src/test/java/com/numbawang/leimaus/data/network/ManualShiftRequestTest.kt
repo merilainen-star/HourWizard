@@ -6,6 +6,32 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 class ManualShiftRequestTest {
+    @Test fun sendsUnselectedPriorityAsExplicitJsonNull() {
+        val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+        val payload = manualShiftPayload(shift, context, moshi)
+        val request = (moshi.adapter(Any::class.java).fromJson(payload) as List<*>).single() as Map<*, *>
+        val variables = request["variables"] as Map<*, *>
+        assertTrue(variables.containsKey("toiveprioriteetti"))
+        assertNull(variables["toiveprioriteetti"])
+        assertTrue((request["query"] as String).contains("toiveprioriteetti: ${'$'}toiveprioriteetti"))
+    }
+
+    @Test fun returnedIdWithErrorsRequiresReviewInsteadOfOrdinaryRetryOrSuccess() {
+        val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+        val response = moshi.adapter(GraphQLResponse::class.java).fromJson("""
+            {"data":{"tyovuoroAdd":{"tyovuoro":{"id":123,"alku":1789023600,"loppu":1789054200},
+            "errors":[{"message":"Undefined array key \"toiveprioriteetti\""}]}},"errors":[]}
+        """)!!
+        val warning = manualShiftReviewMessage(response)!!
+        assertTrue(warning.contains("123"))
+        assertTrue(warning.contains("on voinut tallentua"))
+        assertTrue(warning.contains("toiveprioriteetti"))
+        assertNull(manualShiftReviewMessage(response.copy(data = response.data!!.copy(
+            tyovuoroAdd = response.data!!.tyovuoroAdd!!.copy(errors = emptyList())))))
+        assertNull(manualShiftReviewMessage(response.copy(data = response.data!!.copy(
+            tyovuoroAdd = response.data!!.tyovuoroAdd!!.copy(tyovuoro = null)))))
+        assertNull(manualShiftReviewMessage(null))
+    }
     private val context = GraphQLDataPayload(
         userProfile = ManualShiftEmployee(123),
         kellokortti = KellokorttiPayload(selectiondefaults = SelectionDefaults(talaatuid = 42, tyopisteid = 77)),

@@ -15,12 +15,14 @@ object GraphQLQueries {
         mutation tyovuoroAdd(${'$'}tyyppi: TyovuoroEnumType!, ${'$'}tyopisteid: Int!,
           ${'$'}talaatuid: Int!, ${'$'}alku: Int!, ${'$'}loppu: Int!,
           ${'$'}taukokesto: Int, ${'$'}tietoja: String, ${'$'}henkiloid: Int,
-          ${'$'}tvmerkintaid: Int, ${'$'}taukoalku: Int, ${'$'}tyontekijalukumaara: Int) {
+          ${'$'}tvmerkintaid: Int, ${'$'}taukoalku: Int, ${'$'}tyontekijalukumaara: Int,
+          ${'$'}toiveprioriteetti: Int) {
           tyovuoroAdd(tyyppi: ${'$'}tyyppi, tyopisteid: ${'$'}tyopisteid,
             talaatuid: ${'$'}talaatuid, alku: ${'$'}alku, loppu: ${'$'}loppu,
             taukokesto: ${'$'}taukokesto, tietoja: ${'$'}tietoja,
             henkiloid: ${'$'}henkiloid, tvmerkintaid: ${'$'}tvmerkintaid,
-            taukoalku: ${'$'}taukoalku, tyontekijalukumaara: ${'$'}tyontekijalukumaara) {
+            taukoalku: ${'$'}taukoalku, tyontekijalukumaara: ${'$'}tyontekijalukumaara,
+            toiveprioriteetti: ${'$'}toiveprioriteetti) {
             tyovuoro { id alku loppu }
             errors { message }
           }
