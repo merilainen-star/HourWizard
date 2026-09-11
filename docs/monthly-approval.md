@@ -9,7 +9,11 @@ viivästyttää toimitusta. Aikataulu palautetaan käynnistyksen, sovelluspäivi
 kellon tai aikavyöhykkeen muutoksen yhteydessä.
 
 Ilmoitus avaa sovelluksen hyväksyntänäkymän. Sama näkymä löytyy etusivun
-**Hyväksy edellisen kuukauden tunnit** -painikkeesta. Näytetään edellisen
+**Hyväksy edellisen kuukauden tunnit** -painikkeesta, joka näkyy vain palvelimen
+vahvistettua vähintään yhden hyväksyntää odottavan jakson. Painike on piilossa
+latauksen ja hakuvirheen aikana sekä kaikkien jaksojen ollessa hyväksyttyjä.
+Piilotus ei itsessään ilmoita tunteja hyväksytyiksi. Tila tarkistetaan etusivulle
+palatessa, tilin vaihtuessa ja onnistuneen hyväksynnän jälkeen. Näytetään edellisen
 kuukauden aikana päättyneet toteumajaksot (jaksotyyppiid 2). Jos palkanmaksujakso
 poikkeaa kalenterikuukaudesta, näytetään sen oikea alku- ja loppupäivä; jos jaksoja
 on useita, ne voi valita yksitellen. Keskeneräiseen kuukauteen päättyviä jaksoja

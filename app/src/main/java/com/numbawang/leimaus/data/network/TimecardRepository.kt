@@ -69,7 +69,7 @@ class TimecardRepository(
             .build()
     }
 
-    suspend fun login(username: String, passwordText: String): StampResult = withContext(Dispatchers.IO) {
+    suspend fun login(username: String, passwordText: String, persistCredentials: Boolean = true): StampResult = withContext(Dispatchers.IO) {
         val settings = prefsRepository.settings.value
 
         if (settings.isDemoMode) {
@@ -109,11 +109,20 @@ class TimecardRepository(
                     val loginData = gqlResp?.data?.login
 
                     if (loginData?.success == true) {
+                        // A background approval-status read must not restore an account that
+                        // the user changed while the request was in flight.
+                        if (!persistCredentials) {
+                            val current = prefsRepository.settings.value
+                            if (current.username != username || current.serverUrl != settings.serverUrl ||
+                                current.isDemoMode || prefsRepository.getPassword() != passwordText) {
+                                return@withContext StampResult.Error("Tili vaihtui. Päivitä tiedot.")
+                            }
+                        }
                         val token = loginData.token ?: ""
                         if (token.isNotBlank()) {
                             prefsRepository.saveAuthToken(token)
                         }
-                        prefsRepository.saveCredentials(username, passwordText)
+                        if (persistCredentials) prefsRepository.saveCredentials(username, passwordText)
 
                         return@withContext StampResult.Success(
                             message = "Kirjautuminen Tuntivelhoon onnistui!",
@@ -170,7 +179,7 @@ class TimecardRepository(
             "Syötä tunnukset asetuksissa."
         }
         if (!mutation) {
-            val result = login(settings.username, prefsRepository.getPassword())
+            val result = login(settings.username, prefsRepository.getPassword(), persistCredentials = false)
             check(result is StampResult.Success) { (result as StampResult.Error).errorMessage }
         }
         val token = prefsRepository.getAuthToken()

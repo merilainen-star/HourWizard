@@ -149,6 +149,14 @@ fun HomeScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val balanceStr by viewModel.currentBalanceStr.collectAsState()
     val logs by viewModel.logs.collectAsState()
+    val approvalEntry by viewModel.approvalEntry.state.collectAsState()
+    val approvalMonth = com.numbawang.leimaus.approval.ApprovalCalendar.previousMonth()
+    androidx.lifecycle.compose.LifecycleResumeEffect(
+        listOf(settings.username, settings.serverUrl, settings.isDemoMode, approvalMonth)
+    ) {
+        viewModel.approvalEntry.refresh(approvalMonth)
+        onPauseOrDispose { viewModel.approvalEntry.invalidate() }
+    }
 
     val currentSessionMinutes = settings.workedMinutesSinceClockIn(System.currentTimeMillis())
 
@@ -180,9 +188,7 @@ fun HomeScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        OutlinedButton(onClick = onNavigateToApproval, modifier = Modifier.fillMaxWidth()) {
-            Text("Hyväksy edellisen kuukauden tunnit")
-        }
+        com.numbawang.leimaus.ui.components.ApprovalEntryButton(approvalEntry, onNavigateToApproval)
         // Welcome & Status Banner Card
         Card(
             modifier = Modifier

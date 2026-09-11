@@ -13,7 +13,8 @@ data class ApprovalUiState(
 )
 
 /** Main-thread controller. Busy is set before launching so rapid taps cannot queue writes. */
-class ApprovalController(private val gateway: ApprovalGateway, private val scope: CoroutineScope) {
+class ApprovalController(private val gateway: ApprovalGateway, private val scope: CoroutineScope,
+    private val onApproved: () -> Unit = {}) {
     private val mutable = MutableStateFlow(ApprovalUiState())
     val state = mutable.asStateFlow()
 
@@ -64,6 +65,7 @@ class ApprovalController(private val gateway: ApprovalGateway, private val scope
                 check(confirmed.approved && confirmed.id == period.id) { "Hyväksyntää ei vahvistettu." }
                 mutable.value = old.copy(selected = confirmed,
                     periods = old.periods.map { if (it.id == confirmed.id) confirmed else it })
+                onApproved()
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
                 mutable.value = old.copy(error = e.message ?: "Hyväksyntä epäonnistui.", requiresRefresh = true)

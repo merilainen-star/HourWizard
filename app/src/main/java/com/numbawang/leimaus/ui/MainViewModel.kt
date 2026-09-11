@@ -45,8 +45,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val prefsRepository = UserPreferencesRepository(application)
     private val db = AppDatabase.getInstance(application)
     private val repository = TimecardRepository(prefsRepository, db.stampDao())
+    private val approvalRepository = com.numbawang.leimaus.approval.ApprovalRepository(repository::approvalRequest)
+    val approvalEntry = com.numbawang.leimaus.approval.ApprovalEntryController(approvalRepository, viewModelScope)
     val approval = com.numbawang.leimaus.approval.ApprovalController(
-        com.numbawang.leimaus.approval.ApprovalRepository(repository::approvalRequest), viewModelScope)
+        approvalRepository, viewModelScope, onApproved = { approvalEntry.refresh() })
     private val achievementRepository = AchievementRepository(db.achievementDao())
     private val alarmScheduler = AlarmScheduler(application)
     private val notificationHelper = NotificationHelper(application)
@@ -221,6 +223,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun testLogin(usernameInput: String, passwordInput: String, serverUrlInput: String? = null) {
+        approvalEntry.invalidate()
         viewModelScope.launch {
             _isLoading.value = true
             val current = prefsRepository.settings.value
@@ -266,6 +269,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         vacationEnd: String = "",
         appTheme: String = "system"
     ) {
+        approvalEntry.invalidate()
         prefsRepository.saveCredentials(username, passwordText)
         prefsRepository.saveReminderSettings(
             morning = morning,

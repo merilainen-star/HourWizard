@@ -17,6 +17,19 @@ import org.robolectric.annotation.Config
 class ApprovalScreenTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun `home entry exists only for confirmed pending state`() {
+        val state = mutableStateOf(ApprovalEntryState.Unknown)
+        compose.setContent { MaterialTheme {
+            com.numbawang.leimaus.ui.components.ApprovalEntryButton(state.value, {})
+        } }
+        for (value in ApprovalEntryState.entries) {
+            compose.runOnIdle { state.value = value }
+            val node = compose.onNodeWithText("Hyväksy edellisen kuukauden tunnit")
+            if (value == ApprovalEntryState.Pending) node.assertExists() else node.assertDoesNotExist()
+            compose.onNodeWithText("Hyväksytty").assertDoesNotExist()
+        }
+    }
+
     @Test fun `one button stays visible while pending and disappears only for approved state`() {
         val state = mutableStateOf(ApprovalUiState("2026-08", listOf(samplePeriod()), samplePeriod()))
         var clicks = 0
