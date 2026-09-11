@@ -383,7 +383,7 @@ fun HomeScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Päivän eteneminen",
+                                text = if (settings.isClockedIn) "Päivän eteneminen" else "Työpäivän toteuma",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = Color.White
                             )
