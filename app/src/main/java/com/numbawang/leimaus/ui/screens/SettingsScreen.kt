@@ -98,6 +98,13 @@ fun SettingsScreen(
 ) {
     val settings by viewModel.settings.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val approvalState by viewModel.approvalEntry.state.collectAsState()
+    val approvalDiagnostic by viewModel.approvalEntry.diagnostic.collectAsState()
+    val approvalClipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    androidx.lifecycle.compose.LifecycleResumeEffect(listOf(settings.username, settings.serverUrl, settings.isDemoMode)) {
+        viewModel.approvalEntry.refresh()
+        onPauseOrDispose { viewModel.approvalEntry.invalidate() }
+    }
 
     var username by remember { mutableStateOf(settings.username) }
     var passwordText by remember { mutableStateOf(viewModel.getStoredPassword()) }
@@ -236,6 +243,14 @@ fun SettingsScreen(
             onCheck = { viewModel.checkForUpdate() },
             onInstall = { viewModel.installAvailableUpdate() },
         )
+
+        com.numbawang.leimaus.ui.components.ApprovalDiagnosticCard(
+            approvalState, approvalDiagnostic, onRefresh = { viewModel.approvalEntry.refresh() },
+            onCopy = {
+                approvalClipboard.setText(androidx.compose.ui.text.AnnotatedString(
+                    "Numbawang ${com.numbawang.leimaus.BuildConfig.VERSION_NAME}\n${approvalDiagnostic.report}"))
+                android.widget.Toast.makeText(context, "Vianmääritystiedot kopioitu", android.widget.Toast.LENGTH_SHORT).show()
+            })
 
         // Credentials Section
         Card(

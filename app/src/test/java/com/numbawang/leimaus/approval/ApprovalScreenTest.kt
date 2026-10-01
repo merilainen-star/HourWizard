@@ -17,6 +17,21 @@ import org.robolectric.annotation.Config
 class ApprovalScreenTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun `diagnostic card can retry and copy without an approve action`() {
+        var reads = 0
+        var copies = 0
+        compose.setContent { MaterialTheme {
+            com.numbawang.leimaus.ui.components.ApprovalDiagnosticCard(
+                ApprovalEntryState.Unavailable, ApprovalDiagnostic("Haku epäonnistui", "error=HTTP_401", true),
+                { reads++ }, { copies++ })
+        } }
+        compose.onNodeWithText("Tarkista hyväksyntätila").performClick()
+        compose.onNodeWithText("Kopioi vianmääritystiedot").performClick()
+        compose.onNodeWithText("Hyväksy").assertDoesNotExist()
+        assertEquals(1, reads)
+        assertEquals(1, copies)
+    }
+
     @Test fun `home entry exists only for confirmed pending state`() {
         val state = mutableStateOf(ApprovalEntryState.Unknown)
         compose.setContent { MaterialTheme {

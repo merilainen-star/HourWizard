@@ -10,10 +10,13 @@ data class ApprovalPeriod(
     val locked: Boolean, val stateKnown: Boolean, val employeeId: Int? = null,
 ) {
     val label: String get() = "${ApprovalCalendar.dateLabel(start)}–${ApprovalCalendar.dateLabel(end)}"
+    // Opening the review must not depend on whether every total needed for a write is available.
+    val awaitingApproval: Boolean get() = stateKnown && !approved && !locked
     val canApprove: Boolean get() = stateKnown && employeeId != null && employeeId > 0 && !approved && !locked && totals.size == 4
 }
 
 interface ApprovalGateway {
+    fun diagnosticSummary(): String = ""
     suspend fun load(month: String): List<ApprovalPeriod>
     suspend fun refresh(id: Int): ApprovalPeriod
     suspend fun approve(period: ApprovalPeriod, month: String): ApprovalPeriod
@@ -26,16 +29,26 @@ class ApprovalRepository(
 ) : ApprovalGateway {
     private val json = Moshi.Builder().build().adapter(Any::class.java)
     private val approvalMutex = Mutex()
+    private var readDiagnostic = ""
+    override fun diagnosticSummary(): String = readDiagnostic
 
     override suspend fun load(month: String): List<ApprovalPeriod> {
+        readDiagnostic = "stage=period_list"
         check(month <= currentMonth()) { "Keskeneräisen kuukauden tunteja ei voi hyväksyä." }
         val range = ApprovalCalendar.monthRange(month)
         val data = request(LIST, mapOf("from" to range.first, "to" to range.last))
         val shifts = data["tyovuorot"].obj()
         checkErrors(shifts)
         val periods = (shifts["jaksot"] as? List<*>) ?: error("Jaksojen tiedot puuttuvat.")
-        return periods.map { parse(it.obj()) }.filter { eligible(it, month) }
-            .distinctBy { it.id }.sortedByDescending { it.end }
+        readDiagnostic += "\nreceived=${periods.size}"
+        val parsed = periods.map { parse(it.obj()) }
+        val selected = parsed.filter { eligible(it, month) }.distinctBy { it.id }.sortedByDescending { it.end }
+        readDiagnostic += "\ntypes=" + parsed.groupingBy { it.type }.eachCount().toSortedMap()
+            .entries.joinToString(",") { "${it.key}:${it.value}" }
+        readDiagnostic += "\nexcluded_type=${parsed.count { it.type != 2 }}" +
+            "\nexcluded_dates=${parsed.count { it.type == 2 && (it.start > it.end || it.end !in range) }}" +
+            "\nmatched=${selected.size}"
+        return selected
     }
 
     override suspend fun refresh(id: Int): ApprovalPeriod =
@@ -71,9 +84,14 @@ class ApprovalRepository(
 
     private fun checkErrors(obj: Map<String, Any?>) {
         val errors = obj["errors"]
-        check(errors == null || errors is List<*> && errors.isEmpty()) {
-            (errors as? List<*>)?.joinToString("; ") { it.obj()["message"]?.toString() ?: "Palvelinvirhe" }
+        if (!(errors == null || errors is List<*> && errors.isEmpty())) {
+            val message = (errors as? List<*>)?.joinToString("; ") { it.obj()["message"]?.toString() ?: "Palvelinvirhe" }
                 ?: "Palvelin palautti virheen."
+            val rejectedField = listOf("tyovuorot", "jaksot", "errors", "jaksoid", "alku", "loppu", "jakso", "jaksotyyppiid",
+                "henkiloid", "kertyma", "tv_tot", "tv_luetut", "tase", "tyopaivat", "jaksotila", "hyvaksytty",
+                "tarkistettu", "valmistettu", "siirretty", "jaksoEnabled", "muokattu", "muokkaaja")
+                .firstOrNull { message.contains("Cannot query field \"$it\"") }
+            throw ApprovalServiceException(message, rejectedField?.let { "GRAPHQL_FIELD_$it" } ?: "GRAPHQL_ERROR")
         }
     }
 

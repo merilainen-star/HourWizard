@@ -34,6 +34,20 @@ tulee ensin päivittää palvelimen tila. Jo hyväksyttyyn jaksoon ei lähetetä
 kirjoitusta. Esihenkilön valmistelu- ja siirtotoiminnot eivät kuulu näkymään.
 Demotilassa oikean palvelun hyväksyntätoiminto on estetty.
 
+## Puuttuvan painikkeen selvittäminen
+
+Asetusten **Tuntien hyväksynnän vianmääritys** näyttää, epäonnistuiko haku,
+puuttuuko päättynyt toteumajakso, onko tila tuntematon vai ovatko jaksot jo
+hyväksyttyjä/lukittuja. **Tarkista hyväksyntätila** tekee vain lukuhaun.
+**Kopioi vianmääritystiedot** kopioi version, kohdekuukauden, turvalliset virhekoodit
+ja jaksojen lukumäärät. Raporttiin ei kopioida raakavastausta, henkilötunnisteita,
+kirjautumistietoja, jaksojen nimiä tai tuntimääriä.
+
+Hakuvirhe ja puuttuva jakso näytetään myös etusivulla. Jos jakso on varmasti
+hyväksymätön mutta yhteenvedosta puuttuu kenttä, etusivun tarkistusnäkymän voi
+avata. Varsinainen Hyväksy-painike pysyy pois käytöstä, kunnes kaikki kirjoitukseen
+tarvittavat tiedot on saatu. Ilmoituksen kellonaika 14.00 ei rajoita näkymän avaamista.
+
 ## Rajapinnan lähde
 
 Kirjautuminen sekä GraphQL-array-kuljetus käyttävät nykyistä TimecardRepositorya

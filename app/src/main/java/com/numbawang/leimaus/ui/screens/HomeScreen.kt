@@ -154,6 +154,7 @@ fun HomeScreen(
     val balanceStr by viewModel.currentBalanceStr.collectAsState()
     val logs by viewModel.logs.collectAsState()
     val approvalEntry by viewModel.approvalEntry.state.collectAsState()
+    val approvalDiagnostic by viewModel.approvalEntry.diagnostic.collectAsState()
     val approvalMonth = com.numbawang.leimaus.approval.ApprovalCalendar.previousMonth()
     androidx.lifecycle.compose.LifecycleResumeEffect(
         listOf(settings.username, settings.serverUrl, settings.isDemoMode, approvalMonth)
@@ -217,6 +218,10 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         com.numbawang.leimaus.ui.components.ApprovalEntryButton(approvalEntry, onNavigateToApproval)
+        if (approvalDiagnostic.needsAttention) {
+            Text(approvalDiagnostic.message)
+            TextButton(onClick = onNavigateToSettings) { Text("Tuntien hyväksynnän vianmääritys") }
+        }
         // Welcome & Status Banner Card
         Card(
             modifier = Modifier
