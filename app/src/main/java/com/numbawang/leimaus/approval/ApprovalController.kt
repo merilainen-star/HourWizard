@@ -25,7 +25,7 @@ class ApprovalController(private val gateway: ApprovalGateway, private val scope
             try {
                 val periods = gateway.load(month)
                 val period = periods.firstOrNull { !it.approved } ?: periods.firstOrNull()
-                val fresh = period?.let { gateway.refresh(it.id) }
+                val fresh = period?.let { gateway.refresh(it) }
                 mutable.value = ApprovalUiState(month, periods, fresh)
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
@@ -40,7 +40,7 @@ class ApprovalController(private val gateway: ApprovalGateway, private val scope
         mutable.value = old.copy(busy = true, error = null, requiresRefresh = true)
         scope.launch {
             try {
-                val fresh = gateway.refresh(id)
+                val fresh = gateway.refresh(old.periods.first { it.id == id })
                 mutable.value = mutable.value.copy(selected = fresh, busy = false, requiresRefresh = false)
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {

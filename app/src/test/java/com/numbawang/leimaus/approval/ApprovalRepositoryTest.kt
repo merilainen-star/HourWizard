@@ -53,6 +53,33 @@ class ApprovalRepositoryTest {
         assertTrue(server.requests.none { it.second })
     }
 
+    @Test fun `detail uses period employee identity when top level identity is null`() = runTest {
+        val server = Server().apply {
+            read = periodJson() + mapOf("henkiloid" to null, "jaksohenkilo" to mapOf("henkiloid" to 202))
+            mutationResponse = envelope("hyvaksyJakso", mapOf("jakso" to (periodJson(approved = true) +
+                mapOf("henkiloid" to null, "jaksohenkilo" to mapOf("henkiloid" to 202))), "errors" to null))
+        }
+        val fresh = server.repository.refresh(samplePeriod())
+        assertEquals(202, fresh.employeeId)
+        assertTrue(fresh.canApprove)
+        assertTrue(server.requests.none { it.second })
+        val request = (approvalJson.fromJson(server.requests.single().first) as List<*>).single() as Map<*, *>
+        assertEquals(202, ((request["variables"] as Map<*, *>)["henkiloid"] as Number).toInt())
+        assertTrue(server.repository.approve(fresh, "2026-08").approved)
+        assertEquals(1, server.requests.count { it.second })
+    }
+
+    @Test fun `conflicting or changed nested employee identity never reaches mutation`() = runTest {
+        for (response in listOf(
+            periodJson() + ("jaksohenkilo" to mapOf("henkiloid" to 999)),
+            periodJson() + mapOf("henkiloid" to null, "jaksohenkilo" to mapOf("henkiloid" to 999)),
+            periodJson() + mapOf("henkiloid" to null, "jaksohenkilo" to mapOf("henkiloid" to null)))) {
+            val server = Server().apply { read = response }
+            assertFails { server.repository.approve(samplePeriod(), "2026-08") }
+            assertTrue(server.requests.none { it.second })
+        }
+    }
+
     @Test fun `current month rejected before any request`() = runTest {
         val server = Server()
         assertFails { server.repository.load("2026-09") }

@@ -45,6 +45,16 @@ class ApprovalScreenTest {
         }
     }
 
+    @Test fun `complete totals with missing identity explain disabled approval`() {
+        val period = samplePeriod().copy(employeeId = null)
+        compose.setContent { MaterialTheme {
+            ApprovalScreen(ApprovalUiState("2026-08", listOf(period), period), {}, {}, {})
+        } }
+        compose.onNodeWithText("Hyväksyntä on estetty. Palvelun vastauksesta puuttuu: jakson henkilötunniste.").assertExists()
+        compose.onNodeWithText("Hyväksy").assertIsNotEnabled()
+        compose.onNodeWithText("Kopioi puuttuvien tietojen raportti").assertExists()
+    }
+
     @Test fun `one button stays visible while pending and disappears only for approved state`() {
         val state = mutableStateOf(ApprovalUiState("2026-08", listOf(samplePeriod()), samplePeriod()))
         var clicks = 0

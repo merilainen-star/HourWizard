@@ -48,6 +48,13 @@ hyväksymätön mutta yhteenvedosta puuttuu kenttä, etusivun tarkistusnäkymän
 avata. Varsinainen Hyväksy-painike pysyy pois käytöstä, kunnes kaikki kirjoitukseen
 tarvittavat tiedot on saatu. Ilmoituksen kellonaika 14.00 ei rajoita näkymän avaamista.
 
+Jaksolistan yhteenveto voi olla puutteellinen, vaikka yksittäisen jakson haku
+palauttaa kaikki neljä arvoa. Tarkempi haku välittää listalta saadun henkilötunnisteen.
+Tunniste luetaan joko `jaksohenkilo.henkiloid`-kentästä tai ylätason `henkiloid`-kentästä;
+ristiriitaiset tunnisteet ja henkilön vaihtuminen estävät hyväksynnän. Hyväksyntänäkymä
+kertoo erikseen, puuttuuko henkilö, hyväksyntätila vai jokin nimetty yhteenvetoarvo.
+Sen kopioitava raportti kuvaa juuri tarkemman haun puutteita ilman tuntimääriä tai tunnisteita.
+
 ## Rajapinnan lähde
 
 Kirjautuminen sekä GraphQL-array-kuljetus käyttävät nykyistä TimecardRepositorya
@@ -57,7 +64,7 @@ ja TUNTIVELHO_API.md:n päätepisteitä. Jaksohaku ja hyväksyntä perustuvat
 - https://app.tuntivelho.com/mobiili/
 - https://app.tuntivelho.com/mobiili/static/js/main.9577daff7ecc85670913.js
 - `kellokorttiTyovuorot` / `tyovuorot(from, to, skipRealtimeInterval: false)`
-- `jaksoById(jaksoid)` ja `hyvaksyJakso(jaksoid, value: true)`
+- `jaksoById(jaksoid, henkiloid)` ja `hyvaksyJakso(jaksoid, value: true)`
 - `JaksoFields` sekä `KertymaFields`: yhteenvedon skalaarit renderöidään
   palvelun käyttöliittymässä suoraan, joten myös Android säilyttää niiden esitysmuodon.
 

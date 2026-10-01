@@ -19,6 +19,7 @@ interface ApprovalGateway {
     fun diagnosticSummary(): String = ""
     suspend fun load(month: String): List<ApprovalPeriod>
     suspend fun refresh(id: Int): ApprovalPeriod
+    suspend fun refresh(period: ApprovalPeriod): ApprovalPeriod = refresh(period.id)
     suspend fun approve(period: ApprovalPeriod, month: String): ApprovalPeriod
 }
 
@@ -51,14 +52,26 @@ class ApprovalRepository(
         return selected
     }
 
-    override suspend fun refresh(id: Int): ApprovalPeriod =
-        parse(request(READ, mapOf("jaksoid" to id))["jaksoById"].obj()).also {
+    override suspend fun refresh(id: Int): ApprovalPeriod = readPeriod(id, null)
+
+    override suspend fun refresh(period: ApprovalPeriod): ApprovalPeriod =
+        readPeriod(period.id, period.employeeId).also {
+            check(period.employeeId == null || it.employeeId == period.employeeId) {
+                "Jakson henkilö muuttui. Päivitä tiedot."
+            }
+        }
+
+    private suspend fun readPeriod(id: Int, employeeId: Int?): ApprovalPeriod =
+        parse(request(READ, buildMap {
+            put("jaksoid", id)
+            employeeId?.let { put("henkiloid", it) }
+        })["jaksoById"].obj()).also {
             check(it.id == id) { "Palvelin palautti eri jakson." }
         }
 
     override suspend fun approve(period: ApprovalPeriod, month: String): ApprovalPeriod = approvalMutex.withLock {
         check(eligible(period, month)) { "Jakso ei kuulu päättyneeseen kuukauteen." }
-        val fresh = refresh(period.id)
+        val fresh = refresh(period)
         check(eligible(fresh, month)) { "Jakson päivämäärät ovat muuttuneet." }
         if (fresh.approved) return@withLock fresh
         check(fresh.canApprove) { "Jaksoa ei voi hyväksyä. Päivitä tiedot." }
@@ -88,7 +101,7 @@ class ApprovalRepository(
             val message = (errors as? List<*>)?.joinToString("; ") { it.obj()["message"]?.toString() ?: "Palvelinvirhe" }
                 ?: "Palvelin palautti virheen."
             val rejectedField = listOf("tyovuorot", "jaksot", "errors", "jaksoid", "alku", "loppu", "jakso", "jaksotyyppiid",
-                "henkiloid", "kertyma", "tv_tot", "tv_luetut", "tase", "tyopaivat", "jaksotila", "hyvaksytty",
+                "henkiloid", "jaksohenkilo", "kertyma", "tv_tot", "tv_luetut", "tase", "tyopaivat", "jaksotila", "hyvaksytty",
                 "tarkistettu", "valmistettu", "siirretty", "jaksoEnabled", "muokattu", "muokkaaja")
                 .firstOrNull { message.contains("Cannot query field \"$it\"") }
             throw ApprovalServiceException(message, rejectedField?.let { "GRAPHQL_FIELD_$it" } ?: "GRAPHQL_ERROR")
@@ -99,6 +112,11 @@ class ApprovalRepository(
         fun number(key: String) = (obj[key] as? Number)?.toLong() ?: error("Jakson $key puuttuu.")
         val state = obj["jaksotila"].obj()
         val totals = obj["kertyma"].obj()
+        val directEmployee = (obj["henkiloid"] as? Number)?.toInt()?.takeIf { it > 0 }
+        val periodEmployee = (obj["jaksohenkilo"].obj()["henkiloid"] as? Number)?.toInt()?.takeIf { it > 0 }
+        check(directEmployee == null || periodEmployee == null || directEmployee == periodEmployee) {
+            "Jakson henkilötunnisteet eivät täsmää."
+        }
         val values = listOf("tv_tot", "tv_luetut", "tase", "tyopaivat").mapNotNull { key ->
             val value = totals[key]
             // The official UI renders these scalars directly. Never assume seconds or sum punches.
@@ -113,7 +131,7 @@ class ApprovalRepository(
             state["hyvaksytty"] is Map<*, *>,
             listOf("tarkistettu", "valmistettu", "siirretty").any { state[it] != null } || state["jaksoEnabled"] == false,
             listOf("hyvaksytty", "tarkistettu", "valmistettu", "siirretty").all { state.containsKey(it) },
-            (obj["henkiloid"] as? Number)?.toInt())
+            periodEmployee ?: directEmployee)
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -122,13 +140,16 @@ class ApprovalRepository(
     companion object {
         // Verified against Finago Mobiili's public main.9577daff7ecc85670913.js, 2026-09-10.
         private const val FIELDS = """jaksoid alku loppu jakso jaksotyyppiid henkiloid
+            jaksohenkilo { henkiloid }
             kertyma { tv_tot tv_luetut tase tyopaivat }
             jaksotila { hyvaksytty { muokattu muokkaaja } tarkistettu { muokattu }
                 valmistettu { muokattu } siirretty { muokattu } jaksoEnabled }"""
         val LIST = """query kellokorttiTyovuorot(${'$'}from: Int!, ${'$'}to: Int!) {
             tyovuorot(from: ${'$'}from, to: ${'$'}to, skipRealtimeInterval: false) { jaksot { $FIELDS } errors { message } }
         }"""
-        val READ = """query jaksoById(${'$'}jaksoid: Int!) { jaksoById(jaksoid: ${'$'}jaksoid) { $FIELDS } }"""
+        val READ = """query jaksoById(${'$'}jaksoid: Int!, ${'$'}henkiloid: Int) {
+            jaksoById(jaksoid: ${'$'}jaksoid, henkiloid: ${'$'}henkiloid) { $FIELDS }
+        }"""
         val APPROVE = """mutation hyvaksyJakso(${'$'}jaksoid: Int!, ${'$'}value: Boolean!) {
             hyvaksyJakso(jaksoid: ${'$'}jaksoid, value: ${'$'}value) { jakso { $FIELDS } errors { message } }
         }"""

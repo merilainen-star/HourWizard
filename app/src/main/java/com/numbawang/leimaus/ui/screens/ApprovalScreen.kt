@@ -7,10 +7,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import com.numbawang.leimaus.BuildConfig
 import com.numbawang.leimaus.approval.ApprovalUiState
 
 @Composable
 fun ApprovalScreen(state: ApprovalUiState, onRefresh: () -> Unit, onSelect: (Int) -> Unit, onApprove: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Hyväksy tunnit", style = MaterialTheme.typography.headlineMedium)
@@ -40,7 +44,22 @@ fun ApprovalScreen(state: ApprovalUiState, onRefresh: () -> Unit, onSelect: (Int
                 Text("Hyväksytty", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
             } else {
                 if (period.locked) Text("Jakso on lukittu tai siirtynyt jatkokäsittelyyn.")
-                if (!period.stateKnown || period.employeeId == null || period.totals.size != 4) Text("Jakson kaikki tiedot eivät ole saatavilla.")
+                val missing = buildList {
+                    if (!period.stateKnown) add("hyväksyntätilan tiedot")
+                    if (period.employeeId == null || period.employeeId <= 0) add("jakson henkilötunniste")
+                    listOf("tv_tot" to "Toteuma", "tv_luetut" to "Luetut", "tase" to "Tase", "tyopaivat" to "Työpäivät")
+                        .filter { it.first !in period.totals }.forEach { add(it.second) }
+                }
+                if (missing.isNotEmpty()) {
+                    Text("Hyväksyntä on estetty. Palvelun vastauksesta puuttuu: ${missing.joinToString(", ")}.")
+                    TextButton(onClick = {
+                        clipboard.setText(AnnotatedString("Numbawang ${BuildConfig.VERSION_NAME}\nmonth=${state.month}\nstage=period_detail\n" +
+                            "unknown_state=${if (period.stateKnown) 0 else 1}\n" +
+                            "missing_employee=${if (period.employeeId == null || period.employeeId <= 0) 1 else 0}\n" +
+                            "missing_totals=" + listOf("tv_tot", "tv_luetut", "tase", "tyopaivat")
+                                .filter { it !in period.totals }.joinToString(",")))
+                    }) { Text("Kopioi puuttuvien tietojen raportti") }
+                }
                 Button(onClick = onApprove, modifier = Modifier.fillMaxWidth(),
                     enabled = !state.busy && !state.requiresRefresh && period.canApprove) {
                     Text("Hyväksy")
