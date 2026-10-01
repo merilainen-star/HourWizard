@@ -1,5 +1,7 @@
 package com.numbawang.leimaus.data.update
 
+import kotlinx.coroutines.CancellationException
+
 /** What Settings should say about the installed build. */
 sealed interface UpdateStatus {
     data object Idle : UpdateStatus
@@ -32,7 +34,7 @@ sealed interface UpdateStatus {
 /**
  * Whether a background check should raise a notification.
  *
- * Notifying once per published version is the point: the check runs every morning, and a version
+ * Notifying once per published version is the point: the check runs daily, and a version
  * the user has already been told about — and possibly decided to skip — must not reappear daily.
  * Only [UpdateStatus.Available] qualifies; a failed check stays silent rather than nagging about a
  * network problem the user cannot act on from the notification shade.
@@ -59,6 +61,7 @@ class CheckForUpdateUseCase(
         val info =
             runCatching { service.fetchLatest() }
                 .getOrElse { error ->
+                    if (error is CancellationException) throw error
                     return UpdateStatus.Failed(error.message ?: "tuntematon virhe")
                 }
 

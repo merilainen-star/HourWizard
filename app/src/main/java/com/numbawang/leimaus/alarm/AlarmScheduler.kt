@@ -12,6 +12,7 @@ class AlarmScheduler(private val context: Context) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
     fun scheduleAlarms(morningTimeStr: String, eveningTimeStr: String) {
+        com.numbawang.leimaus.data.update.DailyUpdateScheduler.schedule(context)
         scheduleSingleAlarm(morningTimeStr, EXTRA_TYPE_MORNING, REQ_CODE_MORNING)
         scheduleSingleAlarm(eveningTimeStr, EXTRA_TYPE_EVENING, REQ_CODE_EVENING)
         scheduleApprovalReminder()

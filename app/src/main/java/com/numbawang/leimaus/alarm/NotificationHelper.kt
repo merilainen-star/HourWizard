@@ -116,7 +116,10 @@ class NotificationHelper(private val context: Context) {
     }
 
     /** Opens the in-app updater; the APK is no longer handed to a browser or Downloads. */
-    fun showUpdateAvailableNotification(versionName: String, sizeMb: Int) {
+    fun showUpdateAvailableNotification(versionName: String, sizeMb: Int): Boolean {
+        if (!androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            notificationManager.getNotificationChannel(UPDATE_CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE) return false
         val downloadIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_OPEN_UPDATE, true)
@@ -142,7 +145,12 @@ class NotificationHelper(private val context: Context) {
             .setContentIntent(downloadPendingIntent)
             .build()
 
-        notificationManager.notify(NOTIFICATION_UPDATE_ID, notification)
+        return try {
+            notificationManager.notify(NOTIFICATION_UPDATE_ID, notification)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
     }
 
     fun showMorningNotification() {

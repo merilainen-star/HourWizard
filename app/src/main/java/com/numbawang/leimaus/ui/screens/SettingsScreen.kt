@@ -243,6 +243,8 @@ fun SettingsScreen(
             onCheck = { viewModel.checkForUpdate() },
             onInstall = { viewModel.installAvailableUpdate() },
         )
+        Text("Päivitykset tarkistetaan automaattisesti kerran vuorokaudessa. Uudesta versiosta tulee ilmoitus.",
+            style = MaterialTheme.typography.bodySmall)
 
         com.numbawang.leimaus.ui.components.ApprovalDiagnosticCard(
             approvalState, approvalDiagnostic, onRefresh = { viewModel.approvalEntry.refresh() },
